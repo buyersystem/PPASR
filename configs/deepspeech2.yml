@@ -61,6 +61,8 @@ tokenizer_conf:
   vocab_model_dir: "dataset/vocab_model/"
   # 制作词汇表的字符类型，支持：char、word、unigram
   model_type: 'char'
+  # 构建词汇表的大小，当model_type为char、word时，为null会使用全部词汇
+  build_vocab_size: null
   # 非语言符号列表
   non_linguistic_symbols: [ ]
   # 是否移除非语言符号
