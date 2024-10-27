@@ -5,7 +5,7 @@ import paddle.inference as paddle_infer
 from loguru import logger
 
 
-class InferencePredictor:
+class StreamingEncoderPredictor:
     def __init__(self,
                  configs,
                  use_model,

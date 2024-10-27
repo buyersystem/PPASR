@@ -101,6 +101,7 @@ class ConvolutionModule(nn.Layer):
 
         # mask batch padding
         if mask_pad.shape[2] > 0:  # time > 0
+            x = paddle.assign(x)
             x.masked_fill_(mask_pad, 0.0)
 
         if self.lorder > 0:
@@ -134,6 +135,7 @@ class ConvolutionModule(nn.Layer):
 
         # mask batch padding
         if mask_pad.shape[2] > 0:  # time > 0
+            x = paddle.assign(x)
             x.masked_fill_(mask_pad, 0.0)
 
         x = x.transpose([0, 2, 1])  # [B, T, C]
