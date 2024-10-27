@@ -4,7 +4,6 @@ from typing import Tuple
 import paddle
 from paddle import nn
 from paddle.nn import initializer as I
-from ppasr.model_utils.utils.common import masked_fill
 from ppasr.model_utils.utils.base import Linear
 
 __all__ = ["MultiHeadedAttention", "RelPositionMultiHeadedAttention"]
@@ -113,9 +112,9 @@ class MultiHeadedAttention(nn.Layer):
             mask = mask.unsqueeze(1).equal(0)  # (batch, 1, *, time2)
             # for last chunk, time2 might be larger than scores.size(-1)
             mask = mask[:, :, :, :scores.shape[-1]]
-            scores = masked_fill(scores, mask, -float('inf'))
+            scores = scores.masked_fill(mask, -float('inf'))
             attn = paddle.nn.functional.softmax(scores, axis=-1)
-            attn = masked_fill(attn, mask, 0.0)  # (batch, head, time1, time2)
+            attn = attn.masked_fill(mask, 0.0)  # (batch, head, time1, time2)
         else:
             attn = paddle.nn.functional.softmax(scores, axis=-1)  # (batch, head, time1, time2)
 

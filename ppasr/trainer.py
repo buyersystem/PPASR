@@ -339,7 +339,7 @@ class PPASRTrainer(object):
             if batch_id % self.configs.train_conf.log_interval == 0:
                 # 计算每秒训练数据量
                 train_speed = self.configs.dataset_conf.batch_sampler.batch_size / (
-                            sum(train_times) / len(train_times) / 1000)
+                        sum(train_times) / len(train_times) / 1000)
                 # 计算剩余时间
                 self.train_eta_sec = (sum(train_times) / len(train_times)) * (self.max_step - self.train_step) / 1000
                 eta_str = str(timedelta(seconds=int(self.train_eta_sec)))
@@ -578,13 +578,11 @@ class PPASRTrainer(object):
 
     def export(self,
                save_model_path='models/',
-               resume_model='models/conformer_streaming_fbank/best_model/',
-               save_quant=False):
+               resume_model='models/conformer_streaming_fbank/best_model/'):
         """
         导出预测模型
         :param save_model_path: 模型保存的路径
         :param resume_model: 准备转换的模型路径
-        :param save_quant: 是否保存量化模型
         :return:
         """
         paddle.jit.enable_to_static(True)
@@ -603,28 +601,28 @@ class PPASRTrainer(object):
         self.model.set_state_dict(model_state_dict)
         logger.info('成功恢复模型参数和优化方法参数：{}'.format(resume_model))
         self.model.eval()
-        # 获取静态模型
-        infer_model = self.model.export()
+        # 获取静态模型输入
+        encoder_input_spec, streaming_encoder_input_spec, decoder_input_spec = self.model.export()
         # 保存模型的路径
         save_feature_method = self.configs.preprocess_conf.feature_method
         save_model_name = f'{self.configs.model_conf.model}_{save_feature_method}/inference_model'
         save_model_dir = os.path.join(save_model_path, save_model_name)
-        infer_model_path = os.path.join(save_model_dir, 'inference')
         shutil.rmtree(save_model_dir, ignore_errors=True)
         os.makedirs(save_model_dir, exist_ok=True)
-        paddle.jit.save(infer_model, infer_model_path)
-        logger.info("预测模型已保存：{}".format(infer_model_path))
-        # 保存量化模型
-        if save_quant:
-            import paddleslim
-            paddle.enable_static()
-            paddleslim.quant.quant_post_dynamic(model_dir=os.path.dirname(infer_model_path),
-                                                save_model_dir=os.path.dirname(infer_model_path),
-                                                model_filename='inference.pdmodel',
-                                                params_filename='inference.pdiparams',
-                                                save_model_filename='inference.pdmodel',
-                                                save_params_filename='inference.pdiparams')
-            logger.info("量化模型已保存：{}".format(os.path.join(os.path.dirname(infer_model_path), 'quantized_model')))
+        encoder_path = os.path.join(save_model_dir, 'encoder')
+        encoder_model = paddle.jit.to_static(self.model.get_encoder_out, input_spec=encoder_input_spec)
+        paddle.jit.save(encoder_model, encoder_path)
+        logger.info("预测模型已保存：{}".format(encoder_path))
+        if self.configs.model_conf.model_args.streaming:
+            streaming_encoder_path = os.path.join(save_model_dir, 'streaming_encoder')
+            streaming_encoder_model = paddle.jit.to_static(self.model.get_encoder_out_chunk,
+                                                           input_spec=streaming_encoder_input_spec)
+            paddle.jit.save(streaming_encoder_model, streaming_encoder_path)
+        if self.configs.model_conf.model != "DeepSpeech2Model":
+            decoder_path = os.path.join(save_model_dir, 'decoder')
+            decoder_model = paddle.jit.to_static(self.model.get_decoder_out, input_spec=decoder_input_spec)
+            paddle.jit.save(decoder_model, decoder_path)
+            logger.info("预测模型已保存：{}".format(decoder_path))
         # 复制词汇表模型
         shutil.copytree(tokenizer.vocab_model_dir, os.path.join(save_model_dir, 'vocab_model'))
         # 保存配置信息
@@ -634,6 +632,9 @@ class PPASRTrainer(object):
                 'model_name': self.configs.model_conf.model,
                 'streaming': self.configs.model_conf.model_args.streaming,
                 'sample_rate': self.configs.dataset_conf.dataset.sample_rate,
-                'preprocess_conf': self.configs.preprocess_conf
+                'preprocess_conf': self.configs.preprocess_conf,
             }
+            if self.configs.model_conf.model != "DeepSpeech2Model":
+                inference_config['symbols'] = {'sos': self.model.sos_symbol(), 'eos': self.model.eos_symbol(),
+                                              'ignore_id': self.model.ignore_symbol()}
             json.dump(inference_config, f, indent=4, ensure_ascii=False)

@@ -12,24 +12,6 @@ def broadcast_shape(shp1, shp2):
     return result[::-1]
 
 
-def masked_fill(xs: paddle.Tensor,
-                mask: paddle.Tensor,
-                value: Union[float, int]):
-    # will be nan when value is `inf`.
-    # mask = mask.astype(xs.dtype)
-    # return xs * (1.0 - mask) + mask * value
-
-    bshape = broadcast_shape(xs.shape, mask.shape)
-    mask.stop_gradient = True
-    # tmp = paddle.ones(shape=[len(bshape)], dtype='int32')
-    # for index in range(len(bshape)):
-    #     tmp[index] = bshape[index]
-    mask = mask.broadcast_to(bshape)
-    trues = paddle.full_like(xs, fill_value=value)
-    xs = paddle.where(mask, trues, xs)
-    return xs
-
-
 def pad_sequence(sequences: List[paddle.Tensor],
                  batch_first: bool = False,
                  padding_value: float = 0.0) -> paddle.Tensor:
@@ -99,17 +81,49 @@ def pad_sequence(sequences: List[paddle.Tensor],
     return out_tensor
 
 
-def add_sos_eos(ys_pad: paddle.Tensor, sos: int, eos: int,
-                ignore_id: int) -> Tuple[paddle.Tensor, paddle.Tensor]:
+def pad_list(xs: List[paddle.Tensor], pad_value: int):
+    """Perform padding for the list of tensors.
+
+    Args:
+        xs (List): List of Tensors [(T_1, `*`), (T_2, `*`), ..., (T_B, `*`)].
+        pad_value (float): Value for padding.
+
+    Returns:
+        Tensor: Padded tensor (B, Tmax, `*`).
+
+    Examples:
+        >>> x = [paddle.ones(4), paddle.ones(2), paddle.ones(1)]
+        >>> x
+        [tensor([1., 1., 1., 1.]), tensor([1., 1.]), tensor([1.])]
+        >>> pad_list(x, 0)
+        tensor([[1., 1., 1., 1.],
+                [1., 1., 0., 0.],
+                [1., 0., 0., 0.]])
+
+    """
+    n_batch = len(xs)
+    max_len = max([x.shape[0] for x in xs])
+    pad = paddle.zeros(shape=[n_batch, max_len], dtype=xs[0].dtype)
+    pad = pad.fill_(value=pad_value)
+    for i in range(n_batch):
+        pad[i, :xs[i].shape[0]] = xs[i]
+    return pad
+
+
+def add_sos_eos(ys_pad: paddle.Tensor, sos: int, eos: int, ignore_id: int
+                ) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """Add <sos> and <eos> labels.
+
     Args:
         ys_pad (paddle.Tensor): batch of padded target sequences (B, Lmax)
         sos (int): index of <sos>
         eos (int): index of <eeos>
         ignore_id (int): index of padding
+
     Returns:
         ys_in (paddle.Tensor) : (B, Lmax + 1)
         ys_out (paddle.Tensor) : (B, Lmax + 1)
+
     Examples:
         >>> sos_id = 10
         >>> eos_id = 11
@@ -128,20 +142,12 @@ def add_sos_eos(ys_pad: paddle.Tensor, sos: int, eos: int,
                 [ 4,  5,  6, 11, -1, -1],
                 [ 7,  8,  9, 11, -1, -1]])
     """
-
-    B = ys_pad.shape[0]
-    _sos = paddle.full([B, 1], sos, dtype=ys_pad.dtype)
-    _eos = paddle.full([B, 1], eos, dtype=ys_pad.dtype)
-    ys_in = paddle.concat([_sos, ys_pad], axis=1)
-    mask_pad = (ys_in == ignore_id)
-    ys_in = masked_fill(ys_in, mask_pad, eos)
-
-    ys_out = paddle.concat([ys_pad, _eos], axis=1)
-    ys_out = masked_fill(ys_out, mask_pad, eos)
-    mask_eos = (ys_out == ignore_id)
-    ys_out = masked_fill(ys_out, mask_eos, eos)
-    ys_out = masked_fill(ys_out, mask_pad, ignore_id)
-    return ys_in, ys_out
+    _sos = paddle.to_tensor(data=[sos], dtype=ys_pad.dtype, place=ys_pad.place, stop_gradient=True)
+    _eos = paddle.to_tensor(data=[eos], dtype=ys_pad.dtype, place=ys_pad.place, stop_gradient=True)
+    ys = [y[y != ignore_id] for y in ys_pad]
+    ys_in = [paddle.concat(x=[_sos, y], axis=0) for y in ys]
+    ys_out = [paddle.concat(x=[y, _eos], axis=0) for y in ys]
+    return pad_list(ys_in, eos), pad_list(ys_out, ignore_id)
 
 
 def th_accuracy(pad_outputs: paddle.Tensor,

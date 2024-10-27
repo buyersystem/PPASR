@@ -1,6 +1,8 @@
 import importlib
 from typing import Tuple
 
+import paddle
+
 from ppasr.data_utils.normalizer import FeatureNormalizer
 from ppasr.model_utils.loss.ctc import CTCLoss
 from ppasr.model_utils.loss.label_smoothing_loss import LabelSmoothingLoss
@@ -165,7 +167,6 @@ class ConformerModel(paddle.nn.Layer):
     def eos_symbol(self) -> int:
         return self.eos
 
-    @paddle.jit.to_static
     def get_encoder_out(self, speech: paddle.Tensor, speech_lengths: paddle.Tensor) -> \
             Tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """ Get encoder output
@@ -184,7 +185,6 @@ class ConformerModel(paddle.nn.Layer):
         encoder_lens = encoder_mask.squeeze(1).sum(1)
         return encoder_outs, ctc_probs, encoder_lens
 
-    @paddle.jit.to_static
     def get_encoder_out_chunk(self,
                               speech: paddle.Tensor,
                               offset: int,
@@ -207,8 +207,7 @@ class ConformerModel(paddle.nn.Layer):
         ctc_probs = self.ctc.softmax(xs)
         return ctc_probs, att_cache, cnn_cache
 
-    @paddle.jit.to_static
-    def forward_attention_decoder(
+    def get_decoder_out(
             self,
             hyps: paddle.Tensor,
             hyps_lens: paddle.Tensor,
@@ -245,7 +244,7 @@ class ConformerModel(paddle.nn.Layer):
         index = (seq_len_expand - 1) - index_range  # (beam, max_len)
         index = index * seq_mask
         r_hyps = paddle.assign(paddle.take_along_axis(r_hyps, axis=1, indices=index))
-        r_hyps = paddle.where(seq_mask, r_hyps, self.eos)
+        r_hyps = paddle.where(seq_mask, r_hyps, paddle.to_tensor(self.eos_symbol(), dtype=paddle.int64))
         r_hyps = paddle.concat([hyps[:, 0:1], r_hyps], axis=1)
 
         decoder_out, r_decoder_out, _ = self.decoder(encoder_out, encoder_mask, hyps, hyps_lens, r_hyps,
@@ -256,22 +255,22 @@ class ConformerModel(paddle.nn.Layer):
 
     @paddle.no_grad()
     def export(self):
-        if self.streaming:
-            static_model = paddle.jit.to_static(
-                self.get_encoder_out_chunk,
-                input_spec=[
-                    paddle.static.InputSpec(shape=[1, None, self.input_size], dtype=paddle.float32),  # [B, T, D]
-                    paddle.static.InputSpec(shape=[1], dtype=paddle.int32),  # offset, int, but need be tensor
-                    paddle.static.InputSpec(shape=[1], dtype=paddle.int32),  # required_cache_size, int
-                    paddle.static.InputSpec(shape=[None, None, None, None], dtype=paddle.float32),  # att_cache
-                    paddle.static.InputSpec(shape=[None, None, None, None], dtype=paddle.float32)  # cnn_cache
-                ])
-        else:
-            static_model = paddle.jit.to_static(
-                self.get_encoder_out,
-                input_spec=[
-                    paddle.static.InputSpec(shape=[None, None, self.input_size], dtype=paddle.float32),  # [B, T, D]
-                    paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
-                ])
+        encoder_input_spec = [
+            paddle.static.InputSpec(shape=[None, None, self.input_size], dtype=paddle.float32),  # [B, T, D]
+            paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
+        ]
+        streaming_encoder_input_spec = [
+            paddle.static.InputSpec(shape=[1, None, self.input_size], dtype=paddle.float32),  # [B, T, D]
+            paddle.static.InputSpec(shape=[1], dtype=paddle.int32),  # offset, int, but need be tensor
+            paddle.static.InputSpec(shape=[1], dtype=paddle.int32),  # required_cache_size, int
+            paddle.static.InputSpec(shape=[None, None, None, None], dtype=paddle.float32),  # att_cache
+            paddle.static.InputSpec(shape=[None, None, None, None], dtype=paddle.float32)  # cnn_cache
+        ]
+        decoder_input_spec = [
+            paddle.static.InputSpec(shape=[None, None], dtype=paddle.int64),  # hyps [beam_size, D]
+            paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # hyps_lens, [beam_size]
+            paddle.static.InputSpec(shape=[None, None, self.encoder.output_size()], dtype=paddle.float32),  # encoder_out
+            paddle.static.InputSpec(shape=[1], dtype=paddle.float32)  # reverse_weight
+        ]
 
-        return static_model
+        return encoder_input_spec, streaming_encoder_input_spec, decoder_input_spec

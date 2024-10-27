@@ -2,8 +2,6 @@ import paddle
 import paddle.nn.functional as F
 from paddle import nn
 
-from ppasr.model_utils.utils.common import masked_fill
-
 
 class LabelSmoothingLoss(nn.Layer):
     """Label-smoothing loss.
@@ -75,7 +73,7 @@ class LabelSmoothingLoss(nn.Layer):
         true_dist = paddle.full_like(x, self.smoothing / (self.size - 1))
         ignore = target == self.padding_idx  # (B,)
 
-        target = masked_fill(target, ignore, 0)  # avoid -1 index
+        target = target.masked_fill(ignore, 0)  # avoid -1
         # true_dist.scatter_(1, target.unsqueeze(1), self.confidence)
         target_mask = F.one_hot(target, self.size)
         true_dist *= (1 - target_mask)
@@ -87,6 +85,6 @@ class LabelSmoothingLoss(nn.Layer):
         total = len(target) - int(ignore.astype(target.dtype).sum())
         denom = total if self.normalize_length else B
         # numer = (kl * (1 - ignore)).sum()
-        numer = masked_fill(kl, ignore.unsqueeze(1), 0).sum()
+        numer = kl.masked_fill(ignore.unsqueeze(1), 0).sum()
         return numer / denom
 
