@@ -79,21 +79,15 @@ class DeepSpeech2Model(nn.Layer):
         return ctc_probs, eouts_len, final_chunk_state_h_box, final_chunk_state_c_box
 
     def export(self):
-        if self.streaming:
-            static_model = paddle.jit.to_static(
-                self.get_encoder_out_chunk,
-                input_spec=[
-                    paddle.static.InputSpec(shape=[None, None, self.input_size],
-                                            dtype=paddle.float32),  # [B, chunk_size, feat_dim]
-                    paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
-                    paddle.static.InputSpec(shape=[None, None, None], dtype=paddle.float32),
-                    paddle.static.InputSpec(shape=[None, None, None], dtype=paddle.float32)
-                ])
-        else:
-            static_model = paddle.jit.to_static(
-                self.get_encoder_out,
-                input_spec=[
-                    paddle.static.InputSpec(shape=[None, None, self.input_size], dtype=paddle.float32),  # [B, T, D]
-                    paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
-                ])
-        return static_model
+        encoder_input_spec = [
+            paddle.static.InputSpec(shape=[None, None, self.input_size], dtype=paddle.float32),  # [B, T, D]
+            paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
+        ]
+        streaming_encoder_input_spec = [
+            paddle.static.InputSpec(shape=[None, None, self.input_size],
+                                    dtype=paddle.float32),  # [B, chunk_size, feat_dim]
+            paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # audio_length, [B]
+            paddle.static.InputSpec(shape=[None, None, None], dtype=paddle.float32),
+            paddle.static.InputSpec(shape=[None, None, None], dtype=paddle.float32)
+        ]
+        return encoder_input_spec, streaming_encoder_input_spec, None

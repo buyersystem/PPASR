@@ -8,9 +8,7 @@ from loguru import logger
 class StreamingEncoderPredictor:
     def __init__(self,
                  configs,
-                 use_model,
-                 streaming=True,
-                 model_dir='models/ConformerModel_fbank/inference_model/',
+                 model_dir,
                  use_gpu=True,
                  use_tensorrt=False,
                  gpu_mem=1000,
@@ -18,7 +16,6 @@ class StreamingEncoderPredictor:
         """
         语音识别预测工具
         :param configs: 配置参数
-        :param use_model: 使用模型的名称
         :param use_model: 是否为流式模型
         :param model_dir: 导出的预测模型文件夹路径
         :param use_gpu: 是否使用GPU预测
@@ -26,17 +23,19 @@ class StreamingEncoderPredictor:
         :param num_threads: 只用CPU预测的线程数量
         """
         self.configs = configs
-        self.use_model = use_model
-        self.streaming = streaming
         # 流式参数
         self.output_state_h = None
         self.output_state_c = None
+        # 全零初始化
+        if self.configs.model_name == 'DeepSpeech2Model':
+            self.output_state_h = np.zeros(shape=self.configs.state_input_shape, dtype=np.float32)
+            self.output_state_c = np.zeros(shape=self.configs.state_input_shape, dtype=np.float32)
         self.cnn_cache = np.zeros([0, 0, 0, 0], dtype=np.float32)
         self.att_cache = np.zeros([0, 0, 0, 0], dtype=np.float32)
         self.offset = np.array([0], dtype=np.int32)
         # 创建 config
-        model_path = os.path.join(model_dir, 'inference.pdmodel')
-        params_path = os.path.join(model_dir, 'inference.pdiparams')
+        model_path = os.path.join(model_dir, 'streaming_encoder.pdmodel')
+        params_path = os.path.join(model_dir, 'streaming_encoder.pdiparams')
         if not os.path.exists(model_path) or not os.path.exists(params_path):
             raise Exception("模型文件不存在，请检查%s和%s是否存在！" % (model_path, params_path))
         config = paddle_infer.Config(model_path, params_path)
@@ -71,23 +70,18 @@ class StreamingEncoderPredictor:
 
         # 根据 config 创建 predictor
         self.predictor = paddle_infer.create_predictor(config)
-        logger.info(f'已加载模型：{model_dir}')
+        logger.info(f'已加载模型：{model_path}')
 
         # 获取输入层
         self.speech_data_handle = self.predictor.get_input_handle('speech')
-        # deepspeech2模型
-        if self.use_model == 'deepspeech2':
+        # DeepSpeech2Model流式模型输入的状态
+        if self.configs.model_name == 'DeepSpeech2Model':
             self.speech_lengths_handle = self.predictor.get_input_handle('speech_lengths')
-        # 流式模型需要输入的状态
-        if self.use_model == 'deepspeech2' and self.streaming:
             self.init_state_h_box_handle = self.predictor.get_input_handle('init_state_h_box')
             self.init_state_c_box_handle = self.predictor.get_input_handle('init_state_c_box')
 
-        # conformer相关模型
-        if 'former' in self.use_model and not self.streaming:
-            self.speech_lengths_handle = self.predictor.get_input_handle('speech_lengths')
-        # 流式模型需要输入的状态
-        if 'former' in self.use_model and self.streaming:
+        # ConformerModel流式模型输入的状态
+        if self.configs.model_name == 'ConformerModel':
             self.offset_handle = self.predictor.get_input_handle('offset')
             self.required_cache_size_handle = self.predictor.get_input_handle('required_cache_size')
             self.cnn_cache_handle = self.predictor.get_input_handle('cnn_cache')
@@ -96,54 +90,8 @@ class StreamingEncoderPredictor:
         # 获取输出的名称
         self.output_names = self.predictor.get_output_names()
 
-    # 预测音频
-    def predict(self, speech, speech_lengths):
-        """
-        预测函数，只预测完整的一句话。
-        :param speech: 经过处理的音频数据
-        :param speech_lengths: 音频长度
-        :return: 识别的文本结果和解码的得分数
-        """
-        # 设置输入
-        self.speech_data_handle.reshape([speech.shape[0], speech.shape[1], speech.shape[2]])
-        self.speech_data_handle.copy_from_cpu(speech)
-        if not self.streaming or self.use_model == 'deepspeech2':
-            self.speech_lengths_handle.reshape([speech.shape[0]])
-            self.speech_lengths_handle.copy_from_cpu(speech_lengths)
-
-        # 对流式deepspeech2模型initial_states全零初始化
-        if self.use_model == 'deepspeech2' and self.streaming:
-            init_state_h_box = np.zeros(shape=(self.configs.encoder_conf.num_rnn_layers,
-                                               speech.shape[0],
-                                               self.configs.encoder_conf.rnn_size), dtype=np.float32)
-            self.init_state_h_box_handle.reshape(init_state_h_box.shape)
-            self.init_state_h_box_handle.copy_from_cpu(init_state_h_box)
-            self.init_state_c_box_handle.reshape(init_state_h_box.shape)
-            self.init_state_c_box_handle.copy_from_cpu(init_state_h_box)
-        # 对流式conformer模型全零初始化
-        if 'former' in self.use_model and self.streaming:
-            self.reset_stream()
-            self.offset_handle.reshape(self.offset.shape)
-            self.offset_handle.copy_from_cpu(self.offset)
-            required_cache_size = np.array([-1], dtype=np.int32)
-            self.required_cache_size_handle.reshape(required_cache_size.shape)
-            self.required_cache_size_handle.copy_from_cpu(required_cache_size)
-            self.cnn_cache_handle.reshape(self.cnn_cache.shape)
-            self.cnn_cache_handle.copy_from_cpu(self.cnn_cache)
-            self.att_cache_handle.reshape(self.att_cache.shape)
-            self.att_cache_handle.copy_from_cpu(self.att_cache)
-
-        # 运行predictor
-        self.predictor.run()
-
-        # 获取输出
-        output_handle = self.predictor.get_output_handle(self.output_names[0])
-        output_data = output_handle.copy_to_cpu()
-        return output_data
-
-    def predict_chunk_deepspeech(self, x_chunk):
-        if not (self.use_model == 'deepspeech2' and self.streaming):
-            raise Exception(f'当前模型不支持该方法，当前模型为：{self.use_model}')
+    # Deepspeech2模型流式预测
+    def predict_deepspeech(self, x_chunk):
         # 设置输入
         x_chunk_lens = np.array([x_chunk.shape[1]])
         self.speech_data_handle.reshape([x_chunk.shape[0], x_chunk.shape[1], x_chunk.shape[2]])
@@ -151,14 +99,6 @@ class StreamingEncoderPredictor:
         self.speech_data_handle.copy_from_cpu(x_chunk.astype(np.float32))
         self.speech_lengths_handle.copy_from_cpu(x_chunk_lens.astype(np.int64))
 
-        if self.output_state_h is None:
-            # 全零初始化
-            self.output_state_h = np.zeros(shape=(self.configs.encoder_conf.num_rnn_layers,
-                                                  x_chunk.shape[0],
-                                                  self.configs.encoder_conf.rnn_size), dtype=np.float32)
-            self.output_state_c = np.zeros(shape=(self.configs.encoder_conf.num_rnn_layers,
-                                                  x_chunk.shape[0],
-                                                  self.configs.encoder_conf.rnn_size), dtype=np.float32)
         self.init_state_h_box_handle.reshape(self.output_state_h.shape)
         self.init_state_h_box_handle.copy_from_cpu(self.output_state_h)
         self.init_state_c_box_handle.reshape(self.output_state_c.shape)
@@ -178,9 +118,8 @@ class StreamingEncoderPredictor:
         self.output_state_c = output_state_c_handle.copy_to_cpu()
         return output_chunk_probs, output_lens
 
-    def predict_chunk_conformer(self, x_chunk, required_cache_size):
-        if not ('former' in self.use_model and self.streaming):
-            raise Exception(f'当前模型不支持该方法，当前模型为：{self.use_model}')
+    # Conformer模型流式预测
+    def predict_conformer(self, x_chunk, required_cache_size):
         # 设置输入
         self.speech_data_handle.reshape([x_chunk.shape[0], x_chunk.shape[1], x_chunk.shape[2]])
         self.speech_data_handle.copy_from_cpu(x_chunk.astype(np.float32))
@@ -210,8 +149,10 @@ class StreamingEncoderPredictor:
 
     # 重置流式识别，每次流式识别完成之后都要执行
     def reset_stream(self):
-        self.output_state_h = None
-        self.output_state_c = None
+        # 全零初始化
+        if self.configs.model_name == 'DeepSpeech2Model':
+            self.output_state_h = np.zeros(shape=self.configs.state_input_shape, dtype=np.float32)
+            self.output_state_c = np.zeros(shape=self.configs.state_input_shape, dtype=np.float32)
         self.att_cache = np.zeros([0, 0, 0, 0], dtype=np.float32)
         self.cnn_cache = np.zeros([0, 0, 0, 0], dtype=np.float32)
         self.offset = np.array([0], dtype=np.int32)

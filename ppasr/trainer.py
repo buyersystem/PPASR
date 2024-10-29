@@ -637,4 +637,9 @@ class PPASRTrainer(object):
             if self.configs.model_conf.model != "DeepSpeech2Model":
                 inference_config['symbols'] = {'sos': self.model.sos_symbol(), 'eos': self.model.eos_symbol(),
                                               'ignore_id': self.model.ignore_symbol()}
+
+            if self.configs.model_conf.model == "DeepSpeech2Model":
+                inference_config['state_input_shape'] = [self.configs.encoder_conf.encoder_args.num_rnn_layers,
+                                                         1,
+                                                         self.configs.encoder_conf.encoder_args.rnn_size]
             json.dump(inference_config, f, indent=4, ensure_ascii=False)

@@ -26,6 +26,7 @@ print_arguments(args=args)
 # 获取识别器
 predictor = PPASRPredictor(model_dir=args.model_dir,
                            use_gpu=args.use_gpu,
+                           use_streaming=args.real_time_demo,
                            decoder=args.decoder,
                            decoder_configs=args.decoder_configs,
                            punc_device_id=args.punc_device_id,

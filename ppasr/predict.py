@@ -4,7 +4,6 @@ from io import BufferedReader
 from typing import Union, List
 
 import numpy as np
-import paddle
 import yaml
 from loguru import logger
 from yeaudio.audio import AudioSegment
@@ -12,16 +11,19 @@ from yeaudio.vad_model import VadOnlineModel
 
 from ppasr.data_utils.audio_featurizer import AudioFeaturizer
 from ppasr.data_utils.tokenizer import PPASRTokenizer
-from ppasr.decoders.ctc_prefix_beam_search import ctc_prefix_beam_search
 from ppasr.decoders.attention_rescoring import attention_rescoring
 from ppasr.decoders.ctc_greedy_search import ctc_greedy_search
+from ppasr.decoders.ctc_prefix_beam_search import ctc_prefix_beam_search
+from ppasr.infer_utils.decoder_predictor import DecoderPredictor
 from ppasr.infer_utils.encoder_predictor import EncoderPredictor
+from ppasr.infer_utils.streaming_encoder_predictor import StreamingEncoderPredictor
 from ppasr.utils.utils import dict_to_object, print_arguments
 
 
 class PPASRPredictor:
     def __init__(self,
                  model_dir: str = 'models/ConformerModel_fbank/inference_model/',
+                 use_streaming: bool = False,
                  decoder: str = "ctc_greedy",
                  decoder_configs: Union[str, dict] = None,
                  punc_model_dir: str = None,
@@ -40,6 +42,8 @@ class PPASRPredictor:
         :param use_gpu: 是否使用GPU预测
         :param use_tensorrt: 是否使用TensorRT预测
         """
+        self.model_dir = model_dir
+        self.use_tensorrt = use_tensorrt
         model_info_path = os.path.join(model_dir, 'inference.json')
         assert os.path.exists(model_info_path), f'模型配置文件[{model_info_path}]不存在，请检查该文件是否存在！'
         with open(model_info_path, 'r', encoding='utf-8') as f:
@@ -90,6 +94,16 @@ class PPASRPredictor:
             logger.info("在线标点符号模型已加载完成")
         # 获取预测器
         self.encoder_predictor = EncoderPredictor(model_dir=model_dir, use_gpu=self.use_gpu, use_tensorrt=use_tensorrt)
+        # 流式预测器
+        if use_streaming:
+            self.streaming_encoder_predictor = StreamingEncoderPredictor(configs=self.model_info,
+                                                                         model_dir=model_dir,
+                                                                         use_gpu=self.use_gpu,
+                                                                         use_tensorrt=use_tensorrt)
+        if self.model_info.model_name != "DeepSpeech2Model":
+            self.decoder_predictor = DecoderPredictor(model_dir=model_dir,
+                                                      use_gpu=self.use_gpu,
+                                                      use_tensorrt=use_tensorrt)
         # 加载流式VAD模型
         if self.model_info.streaming:
             self.vad_online_model = VadOnlineModel(device_id=punc_device_id)
@@ -283,13 +297,13 @@ class PPASRPredictor:
         :return: 识别的文本结果和解码的得分数
         """
         if self.sd_predictor is None:
-            from ppvector.predict import MVectorPredictor
+            from ppvector.predict import PPVectorPredictor
             # 获取识别器
-            self.sd_predictor = MVectorPredictor(configs=vector_configs,
-                                                 model_path=vector_model_path,
-                                                 threshold=vector_threshold,
-                                                 audio_db_path=audio_db_path,
-                                                 use_gpu=self.use_gpu)
+            self.sd_predictor = PPVectorPredictor(configs=vector_configs,
+                                                  model_path=vector_model_path,
+                                                  threshold=vector_threshold,
+                                                  audio_db_path=audio_db_path,
+                                                  use_gpu=self.use_gpu)
         # 进行说话人日志识别
         sd_results = self.sd_predictor.speaker_diarization(audio_data,
                                                            speaker_num=speaker_num,
@@ -344,6 +358,12 @@ class PPASRPredictor:
         :return: 识别的文本结果和解码的得分数
         """
         assert self.model_info.streaming, f'不支持改该模型流式识别，当前模型：{self.model_info.model_name}'
+        # 流式预测器
+        if self.streaming_encoder_predictor is None:
+            self.streaming_encoder_predictor = StreamingEncoderPredictor(configs=self.model_info,
+                                                                         model_dir=self.model_dir,
+                                                                         use_gpu=self.use_gpu,
+                                                                         use_tensorrt=self.use_tensorrt)
         # 加载音频文件，并进行预处理
         if isinstance(audio_data, np.ndarray):
             audio_data = AudioSegment.from_ndarray(audio_data, sample_rate)
@@ -401,7 +421,7 @@ class PPASRPredictor:
                 required_cache_size = decoding_chunk_size * num_decoding_left_chunks
                 output_chunk_probs = self.streaming_encoder_predictor.predict_conformer(x_chunk=x_chunk,
                                                                                         required_cache_size=required_cache_size)
-                output_lens = np.array([output_chunk_probs.size(1)], dtype=np.int32)
+                output_lens = np.array([output_chunk_probs.shape[1]], dtype=np.int32)
             else:
                 raise Exception(f'当前模型不支持该方法，当前模型为：{self.model_info.model_name}')
             # 执行解码
@@ -442,7 +462,7 @@ class PPASRPredictor:
 
     # 重置预测器
     def reset_predictor(self):
-        self.predictor.reset_stream()
+        self.streaming_encoder_predictor.reset_stream()
         logger.info('重置预测器')
 
     # 重置流式识别状态

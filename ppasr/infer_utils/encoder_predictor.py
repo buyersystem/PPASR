@@ -6,7 +6,7 @@ from loguru import logger
 
 class EncoderPredictor:
     def __init__(self,
-                 model_dir='models/ConformerModel_fbank/inference_model/',
+                 model_dir,
                  use_gpu=True,
                  use_tensorrt=False,
                  gpu_mem=1000,
@@ -56,7 +56,7 @@ class EncoderPredictor:
 
         # 根据 config 创建 predictor
         self.predictor = paddle_infer.create_predictor(config)
-        logger.info(f'已加载模型：{model_dir}')
+        logger.info(f'已加载模型：{model_path}')
 
         # 获取输入层
         self.speech_data_handle = self.predictor.get_input_handle('speech')
