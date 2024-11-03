@@ -1,12 +1,13 @@
-from typing import List
+from typing import List, Union
 
 import numpy as np
+import paddle
 
 from ppasr.decoders.utils import remove_duplicates_and_blank
 
 
-def ctc_greedy_search(ctc_probs: np.ndarray,
-                      ctc_lens: np.ndarray,
+def ctc_greedy_search(ctc_probs: Union[paddle.Tensor, np.ndarray],
+                      ctc_lens: Union[paddle.Tensor, np.ndarray],
                       blank_id: int = 0) -> List[List[int]]:
     """贪心解码器  
 

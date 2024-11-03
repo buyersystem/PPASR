@@ -110,8 +110,7 @@ def pad_list(xs: List[paddle.Tensor], pad_value: int):
     return pad
 
 
-def add_sos_eos(ys_pad: paddle.Tensor, sos: int, eos: int, ignore_id: int
-                ) -> Tuple[paddle.Tensor, paddle.Tensor]:
+def add_sos_eos(ys_pad: paddle.Tensor, sos: int, eos: int, ignore_id: int) -> Tuple[paddle.Tensor, paddle.Tensor]:
     """Add <sos> and <eos> labels.
 
     Args:

@@ -100,7 +100,7 @@ class PPASRPredictor:
                                                                          model_dir=model_dir,
                                                                          use_gpu=self.use_gpu,
                                                                          use_tensorrt=use_tensorrt)
-        if self.model_info.model_name != "DeepSpeech2Model":
+        if self.model_info.model_name != "DeepSpeech2Model" and self.decoder == "attention_rescoring":
             self.decoder_predictor = DecoderPredictor(model_dir=model_dir,
                                                       use_gpu=self.use_gpu,
                                                       use_tensorrt=use_tensorrt)
@@ -140,9 +140,12 @@ class PPASRPredictor:
                                                blank_id=self._tokenizer.blank_id, **decoder_args)
         elif self.decoder == "attention_rescoring":
             decoder_args = self.decoder_configs.get('attention_rescoring_args', {})
-            result = attention_rescoring(model=self.predictor.model,
+            symbols = {"sos": self.model_info.symbols.sos, "eos": self.model_info.symbols.eos,
+                       "ignore_id": self.model_info.symbols.ignore_id}
+            result = attention_rescoring(decoder_out_func=self.decoder_predictor.predict,
                                          ctc_probs=ctc_probs,
                                          ctc_lens=ctc_lens,
+                                         symbols=symbols,
                                          blank_id=self._tokenizer.blank_id,
                                          encoder_outs=encoder_outs,
                                          encoder_lens=ctc_lens,

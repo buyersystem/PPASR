@@ -69,22 +69,37 @@ class DecoderPredictor:
         # 获取输出的名称
         self.output_names = self.predictor.get_output_names()
 
-    # 预测音频
-    def predict(self, speech, speech_lengths):
+    # 执行语言模型推理
+    def predict(self, hyps, hyps_lens, encoder_out, reverse_weight):
         """
-        预测函数，只预测完整的一句话。
-        :param speech: 经过处理的音频数据
-        :param speech_lengths: 音频长度
+        :param hyps: 前缀搜索解码候选结果
+        :param hyps_lens: 前缀搜索解码候选结果的长度
+        :param encoder_out: 编码器输出
+        :param reverse_weight: 逆向权重
         :return: 识别的文本结果和解码的得分数
         """
+        if not isinstance(hyps, np.ndarray):
+            hyps = hyps.numpy()
+        if not isinstance(hyps_lens, np.ndarray):
+            hyps_lens = hyps_lens.numpy()
+        if not isinstance(reverse_weight, np.ndarray):
+            reverse_weight = np.array([reverse_weight]).astype(np.float32)
         # 设置输入
-        self.hyps_handle.reshape([speech.shape[0], speech.shape[1], speech.shape[2]])
-        self.hyps_handle.copy_from_cpu(speech)
+        self.hyps_handle.reshape([hyps.shape[0], hyps.shape[1]])
+        self.hyps_handle.copy_from_cpu(hyps)
+        self.hyps_lens_handle.reshape([hyps_lens.shape[0]])
+        self.hyps_lens_handle.copy_from_cpu(hyps_lens)
+        self.encoder_out_handle.reshape([encoder_out.shape[0], encoder_out.shape[1], encoder_out.shape[2]])
+        self.encoder_out_handle.copy_from_cpu(encoder_out)
+        self.reverse_weight_handle.reshape([1])
+        self.reverse_weight_handle.copy_from_cpu(reverse_weight)
 
         # 运行predictor
         self.predictor.run()
 
         # 获取输出
-        output_handle = self.predictor.get_output_handle(self.output_names[0])
-        output_data = output_handle.copy_to_cpu()
-        return output_data
+        decoder_out_handle = self.predictor.get_output_handle(self.output_names[0])
+        decoder_out_data = decoder_out_handle.copy_to_cpu()
+        r_decoder_out_handle = self.predictor.get_output_handle(self.output_names[1])
+        r_decoder_out_data = r_decoder_out_handle.copy_to_cpu()
+        return decoder_out_data, r_decoder_out_data

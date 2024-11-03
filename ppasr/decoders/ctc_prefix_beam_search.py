@@ -1,7 +1,7 @@
 import multiprocessing
 import platform
 from collections import defaultdict
-from typing import List
+from typing import List, Union
 
 import numpy as np
 import paddle
@@ -58,8 +58,8 @@ def run_ctc_prefix_beam_search(ctc_prob: List,
     return list(hyps[0][0]), hyps
 
 
-def ctc_prefix_beam_search(ctc_probs: paddle.Tensor,
-                           ctc_lens: paddle.Tensor,
+def ctc_prefix_beam_search(ctc_probs: Union[paddle.Tensor, np.ndarray],
+                           ctc_lens: Union[paddle.Tensor, np.ndarray],
                            num_workers: int = 4,
                            beam_size: int = 10,
                            blank_id: int = 0) -> [List, List]:

@@ -1,5 +1,6 @@
-from typing import List
+from typing import List, Dict, Union
 
+import numpy as np
 import paddle
 
 from ppasr.decoders.ctc_prefix_beam_search import ctc_prefix_beam_search
@@ -7,11 +8,12 @@ from ppasr.model_utils.utils.common import add_sos_eos, pad_sequence
 
 
 def attention_rescoring(
-        model,
-        ctc_probs: paddle.Tensor,
-        ctc_lens: paddle.Tensor,
-        encoder_outs: paddle.Tensor,
-        encoder_lens: paddle.Tensor,
+        decoder_out_func,
+        ctc_probs: Union[paddle.Tensor, np.ndarray],
+        ctc_lens: Union[paddle.Tensor, np.ndarray],
+        encoder_outs: Union[paddle.Tensor, np.ndarray],
+        encoder_lens: Union[paddle.Tensor, np.ndarray],
+        symbols: Dict[str, int],
         num_workers: int = 4,
         beam_size: int = 10,
         blank_id: int = 0,
@@ -20,11 +22,12 @@ def attention_rescoring(
 ) -> List:
     """Attention rescoring
 
-    param model: 模型
+    param decoder_out_func: 语言模型输出函数
     param ctc_probs: (B, maxlen, vocab_size) 模型编码器输出的概率分布
     param ctc_lens: (B, ) 每个样本的实际长度
     param encoder_outs: (B, maxlen, encoder_dim) 编码器输出
     param encoder_lens: (B, ) 每个样本的实际长度
+    param symbols: 模型符号表
     param num_workers: 并行解码的进程数
     param beam_size: 解码搜索大小
     param blank_id: 空白标签的id
@@ -32,18 +35,21 @@ def attention_rescoring(
     param reverse_weight: 反向解码器权重
     return: 解码结果，和所有解码结果，用于attention_rescoring解码器使用
     """
-    place = encoder_outs.place
     batch_size = encoder_outs.shape[0]
-    sos, eos, ignore_id = model.sos_symbol(), model.eos_symbol(), model.ignore_symbol()
     # len(hyps) = beam_size, encoder_out: (1, maxlen, encoder_dim)
     _, hyps_list = ctc_prefix_beam_search(ctc_probs=ctc_probs, ctc_lens=ctc_lens, num_workers=num_workers,
                                           blank_id=blank_id, beam_size=beam_size)
     assert len(hyps_list[0]) == beam_size
+    sos, eos, ignore_id = symbols["sos"], symbols["eos"], symbols["ignore_id"]
 
     results = []
     for b in range(batch_size):
         hyps = hyps_list[b]
-        encoder_out = encoder_outs[b, :encoder_lens[b], :].unsqueeze(0)
+        encoder_out = encoder_outs[b, :encoder_lens[b], :]
+        if isinstance(encoder_out, np.ndarray):
+            encoder_out = np.expand_dims(encoder_out, axis=0)
+        else:
+            encoder_out = encoder_out.unsqueeze(0)
 
         hyp_list = []
         for hyp in hyps:
@@ -51,21 +57,19 @@ def attention_rescoring(
             # Prevent the hyp is empty
             if len(hyp_content) == 0:
                 hyp_content = (blank_id,)
-            hyp_content = paddle.to_tensor(hyp_content, place=place, dtype=paddle.int64)
+            hyp_content = paddle.to_tensor(hyp_content, dtype=paddle.int64)
             hyp_list.append(hyp_content)
         hyps_pad = pad_sequence(hyp_list, True, ignore_id)
-        hyps_lens = paddle.to_tensor([len(hyp[0]) for hyp in hyps], place=place, dtype=paddle.int64)  # (beam_size,)
+        hyps_lens = paddle.to_tensor([len(hyp[0]) for hyp in hyps], dtype=paddle.int64)  # (beam_size,)
         hyps_pad, _ = add_sos_eos(hyps_pad, sos, eos, ignore_id)
         hyps_lens = hyps_lens + 1  # Add <sos> at beginning
 
-        # ctc score in ln domain
-        # (beam_size, max_hyps_len, vocab_size)
-        decoder_out, r_decoder_out = model.get_decoder_out(hyps_pad, hyps_lens, encoder_out, reverse_weight)
+        # ctc score in ln domain (beam_size, max_hyps_len, vocab_size)
+        decoder_out, r_decoder_out = decoder_out_func(hyps_pad, hyps_lens, encoder_out, reverse_weight)
 
         # Only use decoder score for rescoring
         best_score = -float('inf')
         best_index = 0
-        # hyps is List[(Text=List[int], Score=float)], len(hyps)=beam_size
         for i, hyp in enumerate(hyps):
             score = 0.0
             for j, w in enumerate(hyp[0]):

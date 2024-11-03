@@ -267,9 +267,12 @@ class PPASRTrainer(object):
                                                blank_id=self.tokenizer.blank_id, **decoder_args)
         elif self.decoder == "attention_rescoring":
             decoder_args = self.decoder_configs.get('attention_rescoring_args', {})
-            result = attention_rescoring(model=self.model,
+            symbols = {"sos": self.model.sos_symbol(), "eos": self.model.eos_symbol(),
+                       "ignore_id": self.model.ignore_symbol()}
+            result = attention_rescoring(decoder_out_func=self.model.get_decoder_out,
                                          ctc_probs=ctc_probs,
                                          ctc_lens=ctc_lens,
+                                         symbols=symbols,
                                          blank_id=self.tokenizer.blank_id,
                                          encoder_outs=encoder_outs,
                                          encoder_lens=ctc_lens,
