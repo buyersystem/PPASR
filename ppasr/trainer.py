@@ -471,7 +471,9 @@ class PPASRTrainer(object):
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
             self.model = fleet.distributed_model(self.model)
         if self.local_rank == 0:
-            logger.info(f'训练数据：{len(self.train_dataset)}，词汇表大小：{self.tokenizer.vocab_size}')
+            logger.info(f'词汇表大小：{self.tokenizer.vocab_size}')
+            logger.info(f'训练数据：{len(self.train_dataset)}')
+            logger.info(f'评估数据：{len(self.test_dataset)}')
 
         self.train_loss, self.eval_loss = None, None
         self.test_log_step, self.train_log_step = 0, 0
