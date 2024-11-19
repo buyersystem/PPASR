@@ -1,5 +1,3 @@
-import random
-
 import numpy as np
 
 
@@ -19,7 +17,7 @@ def collate_fn(batch):
     input_lens = []
     label_lens = []
     for x in range(batch_size):
-        sample = batch_sorted[x]
+        sample = batch[x]
         tensor = sample[0]
         target = sample[1]
         seq_length = tensor.shape[0]
@@ -31,11 +29,4 @@ def collate_fn(batch):
         label_lens.append(label_length)
     input_lens = np.array(input_lens, dtype=np.int64)
     label_lens = np.array(label_lens, dtype=np.int64)
-    # 打乱数据
-    indices = np.arange(batch_size).tolist()
-    random.shuffle(indices)
-    inputs = inputs[indices]
-    labels = labels[indices]
-    input_lens = input_lens[indices]
-    label_lens = label_lens[indices]
     return inputs, labels, input_lens, label_lens
