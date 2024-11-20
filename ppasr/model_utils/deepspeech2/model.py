@@ -68,14 +68,14 @@ class DeepSpeech2Model(nn.Layer):
 
     def get_encoder_out(self, speech, speech_lengths):
         encoder_outs, encoder_lens, _, _ = self.encoder(speech, speech_lengths, None, None)
-        ctc_probs = self.decoder.softmax(encoder_outs)
+        ctc_probs = self.decoder.log_softmax(encoder_outs)
         return encoder_outs, ctc_probs, encoder_lens
 
     def get_encoder_out_chunk(self, speech, speech_lengths, init_state_h_box=None, init_state_c_box=None):
         eouts, eouts_len, final_chunk_state_h_box, final_chunk_state_c_box = self.encoder(speech, speech_lengths,
                                                                                           init_state_h_box,
                                                                                           init_state_c_box)
-        ctc_probs = self.decoder.softmax(eouts)
+        ctc_probs = self.decoder.log_softmax(eouts)
         return ctc_probs, eouts_len, final_chunk_state_h_box, final_chunk_state_c_box
 
     def export(self):

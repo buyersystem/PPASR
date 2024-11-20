@@ -80,7 +80,7 @@ class PPASRTrainer(object):
         self.metrics_type = metrics_type
         self.decoder = decoder
         if self.configs.model_conf.model == 'DeepSpeech2Model':
-            assert self.decoder == "ctc_greedy_search", f'{self.configs.model_conf.model}模型不支持{self.decoder}解码器'
+            assert self.decoder != "attention_rescoring", f'DeepSpeech2Model不支持使用{decoder}解码器！'
         # 读取解码器配置文件
         if isinstance(decoder_configs, str) and os.path.exists(decoder_configs):
             with open(decoder_configs, 'r', encoding='utf-8') as f:
@@ -277,10 +277,12 @@ class PPASRTrainer(object):
         """
         if self.decoder == "ctc_greedy_search":
             result = ctc_greedy_search(ctc_probs=ctc_probs, ctc_lens=ctc_lens, blank_id=self.tokenizer.blank_id)
+            text = self.tokenizer.ids2text([r for r in result])
         elif self.decoder == "ctc_prefix_beam_search":
             decoder_args = self.decoder_configs.get('ctc_prefix_beam_search_args', {})
             result, _ = ctc_prefix_beam_search(ctc_probs=ctc_probs, ctc_lens=ctc_lens,
                                                blank_id=self.tokenizer.blank_id, **decoder_args)
+            text = self.tokenizer.ids2text([r for r in result])
         elif self.decoder == "attention_rescoring":
             decoder_args = self.decoder_configs.get('attention_rescoring_args', {})
             symbols = {"sos": self.model.sos_symbol(), "eos": self.model.eos_symbol(),
@@ -293,9 +295,17 @@ class PPASRTrainer(object):
                                          encoder_outs=encoder_outs,
                                          encoder_lens=ctc_lens,
                                          **decoder_args)
+            text = self.tokenizer.ids2text([r for r in result])
+        elif self.decoder == "ctc_beam_search":
+            if self.beam_search_decoder is None:
+                from ppasr.decoders.beam_search_decoder import BeamSearchDecoder
+                decoder_args = self.decoder_configs.get('ctc_beam_search_args', {})
+                self.beam_search_decoder = BeamSearchDecoder(vocab_list=self.tokenizer.vocab_list,
+                                                             blank_id=self.tokenizer.blank_id,
+                                                             **decoder_args)
+            text = self.beam_search_decoder.ctc_beam_search_decoder_batch(ctc_probs=ctc_probs, ctc_lens=ctc_lens)
         else:
             raise ValueError(f"不支持该解码器：{self.decoder}")
-        text = self.tokenizer.ids2text([r for r in result])
         return text
 
     def __train_epoch(self, epoch_id, save_model_path, writer):

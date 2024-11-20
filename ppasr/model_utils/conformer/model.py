@@ -204,7 +204,7 @@ class ConformerModel(paddle.nn.Layer):
                                                               required_cache_size=required_cache_size,
                                                               att_cache=att_cache,
                                                               cnn_cache=cnn_cache)
-        ctc_probs = self.ctc.softmax(xs)
+        ctc_probs = self.ctc.log_softmax(xs)
         return ctc_probs, att_cache, cnn_cache
 
     def get_decoder_out(
