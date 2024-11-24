@@ -67,6 +67,10 @@ class BeamSearchDecoder:
         result = beam_search_result[0][1].replace('▁', ' ').strip()
         return result
 
+    # 重置参数
+    def reset_params(self, alpha, beta):
+        self._ext_scorer.reset_params(alpha, beta)
+
     # 一批数据解码
     def ctc_beam_search_decoder_batch(self, ctc_probs, ctc_lens):
         if not isinstance(ctc_probs, list):

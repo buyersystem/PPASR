@@ -542,7 +542,7 @@ class PPASRTrainer(object):
                             amp_scaler=self.amp_scaler, save_model_path=save_model_path, epoch_id=epoch_id,
                             error_rate=self.eval_error_result, metrics_type=self.metrics_type)
 
-    def evaluate(self, resume_model=None, display_result=False, max_text_duration=None):
+    def evaluate(self, resume_model=None, display_result=False, max_text_duration=None, only_ctc_probs=False):
         """评估模型
 
         :param resume_model: 所使用的模型
@@ -551,6 +551,8 @@ class PPASRTrainer(object):
         :type display_result: bool
         :param max_text_duration: 测试过滤的最大音频时长，如果不指定，则使用配置文件里面的max_duration
         :type max_text_duration: int
+        :param only_ctc_probs: 是否只返回CTC概率，否则返回解码结果
+        :type only_ctc_probs: bool
         :return: 评估结果
         """
         paddle.jit.enable_to_static(False)
@@ -573,20 +575,26 @@ class PPASRTrainer(object):
         else:
             eval_model = self.model
 
+        all_ctc_probs, all_ctc_lens, all_label = [], [], []
         error_results, losses = [], []
         with paddle.no_grad():
             for batch_id, batch in enumerate(tqdm(self.test_loader())):
                 if self.stop_eval: break
                 inputs, labels, input_lens, label_lens = batch
                 loss_dict = self.model(inputs, input_lens, labels, label_lens)
-                losses.append(float(loss_dict['loss']) / self.configs.train_conf.accum_grad)
                 # 获取模型编码器输出
                 encoder_outs, ctc_probs, ctc_lens = eval_model.get_encoder_out(inputs, input_lens)
-                out_strings = self.__decoder_result(encoder_outs=encoder_outs, ctc_probs=ctc_probs, ctc_lens=ctc_lens)
+                losses.append(float(loss_dict['loss']) / self.configs.train_conf.accum_grad)
                 labels = labels.numpy().tolist()
                 # 移除每条数据的-1值
                 labels = [list(filter(lambda x: x != -1, label)) for label in labels]
                 labels_str = self.tokenizer.ids2text(labels)
+                if only_ctc_probs:
+                    all_ctc_probs.append(ctc_probs)
+                    all_ctc_lens.append(ctc_lens)
+                    all_label.append(labels_str)
+                    continue
+                out_strings = self.__decoder_result(encoder_outs=encoder_outs, ctc_probs=ctc_probs, ctc_lens=ctc_lens)
                 for out_string, label in zip(*(out_strings, labels_str)):
                     # 计算字错率或者词错率
                     if self.metrics_type == 'wer':
@@ -602,9 +610,11 @@ class PPASRTrainer(object):
                         logger.info(f'这条数据的{self.metrics_type}：{round(error_rate, 6)}，'
                                     f'当前{self.metrics_type}：{round(sum(error_results) / len(error_results), 6)}')
                         logger.info('-' * 70)
+        self.model.train()
+        if only_ctc_probs:
+            return all_ctc_probs, all_ctc_lens, all_label
         loss = float(sum(losses) / len(losses)) if len(losses) > 0 else -1
         error_result = float(sum(error_results) / len(error_results)) if len(error_results) > 0 else -1
-        self.model.train()
         return loss, error_result
 
     def export(self,
