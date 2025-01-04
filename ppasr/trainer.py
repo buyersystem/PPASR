@@ -646,7 +646,8 @@ class PPASRTrainer(object):
         if os.path.isdir(resume_model):
             resume_model = os.path.join(resume_model, 'model.pdparams')
         assert os.path.exists(resume_model), f"{resume_model} 模型不存在！"
-        missing_keys, unexpected_keys = self.model.set_state_dict(resume_model)
+        model_state_dict = paddle.load(resume_model)
+        missing_keys, unexpected_keys = self.model.set_state_dict(model_state_dict)
         if len(unexpected_keys) > 0:
             logger.error('Unexpected key(s) in state_dict: {}. '
                          .format(', '.join('"{}"'.format(k) for k in unexpected_keys)))

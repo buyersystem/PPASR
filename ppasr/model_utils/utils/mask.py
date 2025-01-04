@@ -175,14 +175,12 @@ def add_optional_chunk_mask(xs: paddle.Tensor,
                     num_left_chunks = int(paddle.randint(0, max_left_chunks, (1,)))
         chunk_masks = subsequent_chunk_mask(xs.shape[1], chunk_size, num_left_chunks)  # (L, L)
         chunk_masks = chunk_masks.unsqueeze(0)  # (1, L, L)
-        # chunk_masks = masks & chunk_masks  # (B, L, L)
-        chunk_masks = masks.logical_and(chunk_masks)  # (B, L, L)
+        chunk_masks = masks & chunk_masks  # (B, L, L)
     elif static_chunk_size > 0:
         num_left_chunks = num_decoding_left_chunks
         chunk_masks = subsequent_chunk_mask(xs.shape[1], static_chunk_size, num_left_chunks)  # (L, L)
         chunk_masks = chunk_masks.unsqueeze(0)  # (1, L, L)
-        # chunk_masks = masks & chunk_masks  # (B, L, L)
-        chunk_masks = masks.logical_and(chunk_masks)  # (B, L, L)
+        chunk_masks = masks & chunk_masks  # (B, L, L)
     else:
         chunk_masks = masks
     return chunk_masks
