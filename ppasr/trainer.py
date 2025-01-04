@@ -619,7 +619,7 @@ class PPASRTrainer(object):
 
     def export(self,
                save_model_path='models/',
-               resume_model='models/conformer_streaming_fbank/best_model/'):
+               resume_model='models/ConformerModel_fbank/best_model/'):
         """
         导出预测模型
         :param save_model_path: 模型保存的路径
@@ -638,8 +638,7 @@ class PPASRTrainer(object):
         if os.path.isdir(resume_model):
             resume_model = os.path.join(resume_model, 'model.pdparams')
         assert os.path.exists(resume_model), f"{resume_model} 模型不存在！"
-        model_state_dict = paddle.load(resume_model)
-        self.model.set_state_dict(model_state_dict)
+        self.model = load_pretrained(model=self.model, pretrained_model=resume_model)
         logger.info('成功恢复模型参数和优化方法参数：{}'.format(resume_model))
         self.model.eval()
         # 获取静态模型输入
@@ -677,7 +676,7 @@ class PPASRTrainer(object):
             }
             if self.configs.model_conf.model != "DeepSpeech2Model":
                 inference_config['symbols'] = {'sos': self.model.sos_symbol(), 'eos': self.model.eos_symbol(),
-                                              'ignore_id': self.model.ignore_symbol()}
+                                               'ignore_id': self.model.ignore_symbol()}
 
             if self.configs.model_conf.model == "DeepSpeech2Model":
                 inference_config['state_input_shape'] = [self.configs.encoder_conf.encoder_args.num_rnn_layers,

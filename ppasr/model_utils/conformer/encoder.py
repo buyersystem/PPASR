@@ -20,6 +20,8 @@ from ppasr.model_utils.utils.common import get_activation
 from ppasr.model_utils.utils.mask import add_optional_chunk_mask
 from ppasr.model_utils.utils.mask import make_non_pad_mask
 
+__all__ = ['ConformerEncoder']
+
 
 class ConformerEncoder(nn.Layer):
     """Conformer encoder module."""

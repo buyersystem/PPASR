@@ -4,6 +4,8 @@ from loguru import logger
 
 from ppasr.model_utils.conformer.model import ConformerModel
 from ppasr.model_utils.deepspeech2.model import DeepSpeech2Model
+from ppasr.model_utils.efficient_conformer.model import EfficientConformerModel
+from ppasr.model_utils.squeezeformer.model import SqueezeformerModel
 
 __all__ = ['build_model']
 

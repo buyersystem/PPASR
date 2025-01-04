@@ -5,20 +5,20 @@ from typing import Tuple
 import paddle
 
 from ppasr.data_utils.normalizer import FeatureNormalizer
-# noinspection PyUnresolvedReferences
-from ppasr.model_utils.conformer.encoder import *
 from ppasr.model_utils.loss.ctc import CTCLoss
 from ppasr.model_utils.loss.label_smoothing_loss import LabelSmoothingLoss
+# noinspection PyUnresolvedReferences
+from ppasr.model_utils.squeezeformer.encoder import *
 # noinspection PyUnresolvedReferences
 from ppasr.model_utils.transformer.decoder import *
 from ppasr.model_utils.utils.cmvn import GlobalCMVN
 from ppasr.model_utils.utils.common import (IGNORE_ID, add_sos_eos, th_accuracy, reverse_pad_list)
 from ppasr.utils.utils import DictObject
 
-__all__ = ["ConformerModel"]
+__all__ = ["SqueezeformerModel"]
 
 
-class ConformerModel(paddle.nn.Layer):
+class SqueezeformerModel(paddle.nn.Layer):
     def __init__(
             self,
             input_size: int,
@@ -38,9 +38,11 @@ class ConformerModel(paddle.nn.Layer):
         self.input_size = input_size
         # 设置是否为流式模型
         self.streaming = streaming
+        time_reduction_layer_type = 'conv1d'
         use_dynamic_chunk = False
         causal = False
         if self.streaming:
+            time_reduction_layer_type = 'stream'
             use_dynamic_chunk = True
             causal = True
         feature_normalizer = FeatureNormalizer(mean_istd_filepath=mean_istd_path)
@@ -49,9 +51,11 @@ class ConformerModel(paddle.nn.Layer):
         # 创建编码器和解码器
         mod = importlib.import_module(__name__)
         self.encoder = getattr(mod, encoder_conf.encoder_name)
+        print(encoder_conf.encoder_args)
         self.encoder = self.encoder(input_size=input_size,
                                     global_cmvn=global_cmvn,
                                     use_dynamic_chunk=use_dynamic_chunk,
+                                    time_reduction_layer_type=time_reduction_layer_type,
                                     causal=causal,
                                     **encoder_conf.encoder_args if encoder_conf.encoder_args is not None else {})
         self.decoder = getattr(mod, decoder_conf.decoder_name)
@@ -103,7 +107,8 @@ class ConformerModel(paddle.nn.Layer):
         loss_att = None
         if self.ctc_weight != 1.0:
             loss_att, acc_att = self._calc_att_loss(encoder_out, encoder_mask,
-                                                    text, text_lengths, self.reverse_weight)
+                                                    text, text_lengths,
+                                                    self.reverse_weight)
 
         # 2b. CTC branch
         loss_ctc = None
@@ -136,14 +141,17 @@ class ConformerModel(paddle.nn.Layer):
         Returns:
             Tuple[paddle.Tensor, float]: attention_loss, accuracy rate
         """
-        ys_in_pad, ys_out_pad = add_sos_eos(ys_pad, self.sos, self.eos, self.ignore_id)
+        ys_in_pad, ys_out_pad = add_sos_eos(ys_pad, self.sos, self.eos,
+                                            self.ignore_id)
         ys_in_lens = ys_pad_lens + 1
 
         r_ys_pad = reverse_pad_list(ys_pad, ys_pad_lens, float(self.ignore_id))
-        r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos, self.ignore_id)
+        r_ys_in_pad, r_ys_out_pad = add_sos_eos(r_ys_pad, self.sos, self.eos,
+                                                self.ignore_id)
         # 1. Forward decoder
         decoder_out, r_decoder_out, _ = self.decoder(
-            encoder_out, encoder_mask, ys_in_pad, ys_in_lens, r_ys_in_pad, reverse_weight)
+            encoder_out, encoder_mask, ys_in_pad, ys_in_lens, r_ys_in_pad,
+            reverse_weight)
 
         # 2. Compute attention loss
         loss_att = self.criterion_att(decoder_out, ys_out_pad)
@@ -152,7 +160,8 @@ class ConformerModel(paddle.nn.Layer):
             r_loss_att = self.criterion_att(r_decoder_out, r_ys_out_pad)
         loss_att = loss_att * (1 - reverse_weight) + r_loss_att * reverse_weight
         acc_att = th_accuracy(decoder_out.reshape([-1, self.vocab_size]),
-                              ys_out_pad, ignore_label=self.ignore_id, )
+                              ys_out_pad,
+                              ignore_label=self.ignore_id, )
         return loss_att, acc_att
 
     def ignore_symbol(self) -> int:
@@ -272,8 +281,7 @@ class ConformerModel(paddle.nn.Layer):
         decoder_input_spec = [
             paddle.static.InputSpec(shape=[None, None], dtype=paddle.int64),  # hyps [beam_size, D]
             paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # hyps_lens, [beam_size]
-            paddle.static.InputSpec(shape=[None, None, self.encoder.output_size()], dtype=paddle.float32),
-            # encoder_out
+            paddle.static.InputSpec(shape=[None, None, self.encoder.output_size()], dtype=paddle.float32),  # encoder_out
             paddle.static.InputSpec(shape=[1], dtype=paddle.float32)  # reverse_weight
         ]
 

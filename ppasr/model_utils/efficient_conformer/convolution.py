@@ -4,7 +4,7 @@ import paddle
 from paddle import nn
 from typeguard import typechecked
 
-from ppasr.model_utils.utils.base import Conv1D
+from ppasr.model_utils.utils.base import Conv1D, BatchNorm1D, LayerNorm
 
 __all__ = ['ConvolutionModule']
 
@@ -19,29 +19,27 @@ class ConvolutionModule(nn.Layer):
                  activation: nn.Layer = nn.ReLU(),
                  norm: str = "batch_norm",
                  causal: bool = False,
-                 bias: bool = True):
+                 bias: bool = True,
+                 stride: int = 1):
         """Construct an ConvolutionModule object.
         Args:
             channels (int): The number of channels of conv layers.
             kernel_size (int): Kernel size of conv layers.
-            activation (nn.Layer): Activation Layer.
-            norm (str): Normalization type, 'batch_norm' or 'layer_norm'
-            causal (bool): Whether use causal convolution or not
-            bias (bool): Whether Conv with bias or not
+            causal (int): Whether use causal convolution or not
+            stride (int): Stride Convolution, for efficient Conformer
         """
         super().__init__()
+
         self.pointwise_conv1 = Conv1D(channels,
                                       2 * channels,
                                       kernel_size=1,
                                       stride=1,
                                       padding=0,
-                                      bias_attr=None
-                                      if bias else False)
+                                      bias_attr=None if bias else False)
 
         # self.lorder is used to distinguish if it's a causal convolution,
-        # if self.lorder > 0:
-        #    it's a causal convolution, the input will be padded with
-        #    `self.lorder` frames on the left in forward (causal conv impl).
+        # if self.lorder > 0: it's a causal convolution, the input will be
+        #    padded with self.lorder frames on the left in forward.
         # else: it's a symmetrical convolution
         if causal:
             padding = 0
@@ -52,31 +50,30 @@ class ConvolutionModule(nn.Layer):
             padding = (kernel_size - 1) // 2
             self.lorder = 0
 
-        self.depthwise_conv = Conv1D(channels,
-                                     channels,
-                                     kernel_size,
-                                     stride=1,
-                                     padding=padding,
-                                     groups=channels,
-                                     bias_attr=None
-                                     if bias else False)
+        self.depthwise_conv = nn.Conv1D(channels,
+                                        channels,
+                                        kernel_size,
+                                        stride=stride,  # for depthwise_conv in StrideConv
+                                        padding=padding,
+                                        groups=channels,
+                                        bias_attr=None if bias else False)
 
         assert norm in ['batch_norm', 'layer_norm']
         if norm == "batch_norm":
             self.use_layer_norm = False
-            self.norm = nn.BatchNorm1D(channels)
+            self.norm = BatchNorm1D(channels)
         else:
             self.use_layer_norm = True
-            self.norm = nn.LayerNorm(channels)
+            self.norm = LayerNorm(channels)
 
-        self.pointwise_conv2 = Conv1D(channels,
-                                      channels,
-                                      kernel_size=1,
-                                      stride=1,
-                                      padding=0,
-                                      bias_attr=None
-                                      if bias else False)
+        self.pointwise_conv2 = nn.Conv1D(channels,
+                                         channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         bias_attr=None if bias else False)
         self.activation = activation
+        self.stride = stride
 
     def forward(
             self,
@@ -94,10 +91,9 @@ class ConvolutionModule(nn.Layer):
                 (0, 0, 0) meas fake cache.
         Returns:
             paddle.Tensor: Output tensor (#batch, time, channels).
-            paddle.Tensor: Output cache tensor (#batch, channels, time')
         """
         # exchange the temporal dimension and the feature dimension
-        x = x.transpose([0, 2, 1])  # [B, C, T]
+        x = x.transpose([0, 2, 1])  # (#batch, channels, time)
 
         # mask batch padding
         if mask_pad.shape[2] > 0:  # time > 0
@@ -108,12 +104,12 @@ class ConvolutionModule(nn.Layer):
             if cache.shape[2] == 0:  # cache_t == 0
                 x = nn.functional.pad(x, [self.lorder, 0], 'constant', 0.0, data_format='NCL')
             else:
+                cache = cache[:, :, -self.lorder:]
                 assert cache.shape[0] == x.shape[0]  # B
                 assert cache.shape[1] == x.shape[1]  # C
                 x = paddle.concat((cache, x), axis=2)
-
             assert (x.shape[2] > self.lorder)
-            new_cache = x[:, :, -self.lorder:]  # [B, C, T]
+            new_cache = x[:, :, -self.lorder:]
         else:
             # It's better we just return None if no cache is requried,
             # However, for JIT export, here we just fake one tensor instead of
@@ -127,14 +123,15 @@ class ConvolutionModule(nn.Layer):
         # 1D Depthwise Conv
         x = self.depthwise_conv(x)
         if self.use_layer_norm:
-            x = x.transpose([0, 2, 1])  # [B, T, C]
+            x = x.transpose([0, 2, 1])
         x = self.activation(self.norm(x))
         if self.use_layer_norm:
-            x = x.transpose([0, 2, 1])  # [B, C, T]
+            x = x.transpose([0, 2, 1])
         x = self.pointwise_conv2(x)
-
         # mask batch padding
         if mask_pad.shape[2] > 0:  # time > 0
+            if mask_pad.shape[2] != x.shape[2]:
+                mask_pad = mask_pad[:, :, ::self.stride]
             x = paddle.assign(x)
             x = x.masked_fill_(mask_pad, 0.0)
 

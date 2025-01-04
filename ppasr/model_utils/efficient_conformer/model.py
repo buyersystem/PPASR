@@ -6,19 +6,21 @@ import paddle
 
 from ppasr.data_utils.normalizer import FeatureNormalizer
 # noinspection PyUnresolvedReferences
-from ppasr.model_utils.conformer.encoder import *
+from ppasr.model_utils.transformer.decoder import *
+# noinspection PyUnresolvedReferences
+from ppasr.model_utils.efficient_conformer.encoder import *
 from ppasr.model_utils.loss.ctc import CTCLoss
 from ppasr.model_utils.loss.label_smoothing_loss import LabelSmoothingLoss
-# noinspection PyUnresolvedReferences
-from ppasr.model_utils.transformer.decoder import *
 from ppasr.model_utils.utils.cmvn import GlobalCMVN
 from ppasr.model_utils.utils.common import (IGNORE_ID, add_sos_eos, th_accuracy, reverse_pad_list)
+
+
 from ppasr.utils.utils import DictObject
 
-__all__ = ["ConformerModel"]
+__all__ = ["EfficientConformerModel"]
 
 
-class ConformerModel(paddle.nn.Layer):
+class EfficientConformerModel(paddle.nn.Layer):
     def __init__(
             self,
             input_size: int,
@@ -72,8 +74,7 @@ class ConformerModel(paddle.nn.Layer):
             size=vocab_size,
             padding_idx=ignore_id,
             smoothing=lsm_weight,
-            normalize_length=length_normalized_loss,
-        )
+            normalize_length=length_normalized_loss)
 
     def forward(
             self,
@@ -272,8 +273,7 @@ class ConformerModel(paddle.nn.Layer):
         decoder_input_spec = [
             paddle.static.InputSpec(shape=[None, None], dtype=paddle.int64),  # hyps [beam_size, D]
             paddle.static.InputSpec(shape=[None], dtype=paddle.int64),  # hyps_lens, [beam_size]
-            paddle.static.InputSpec(shape=[None, None, self.encoder.output_size()], dtype=paddle.float32),
-            # encoder_out
+            paddle.static.InputSpec(shape=[None, None, self.encoder.output_size()], dtype=paddle.float32),  # encoder_out
             paddle.static.InputSpec(shape=[1], dtype=paddle.float32)  # reverse_weight
         ]
 
