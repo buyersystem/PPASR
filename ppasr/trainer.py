@@ -567,7 +567,15 @@ class PPASRTrainer(object):
                 resume_model = os.path.join(resume_model, 'model.pdparams')
             assert os.path.exists(resume_model), f"{resume_model} 模型不存在！"
             model_state_dict = paddle.load(resume_model)
-            self.model.set_state_dict(model_state_dict)
+            missing_keys, unexpected_keys = self.model.set_state_dict(model_state_dict)
+            if len(unexpected_keys) > 0:
+                logger.error('Unexpected key(s) in state_dict: {}. '
+                             .format(', '.join('"{}"'.format(k) for k in unexpected_keys)))
+            if len(missing_keys) > 0:
+                logger.error('Missing key(s) in state_dict: {}. '
+                             .format(', '.join('"{}"'.format(k) for k in missing_keys)))
+            if len(unexpected_keys) > 0 or len(missing_keys) > 0:
+                raise ValueError("模型有误，请检查模型。")
             logger.info(f'成功加载模型：{resume_model}')
         self.model.eval()
         if isinstance(self.model, paddle.DataParallel):
@@ -638,7 +646,15 @@ class PPASRTrainer(object):
         if os.path.isdir(resume_model):
             resume_model = os.path.join(resume_model, 'model.pdparams')
         assert os.path.exists(resume_model), f"{resume_model} 模型不存在！"
-        self.model = load_pretrained(model=self.model, pretrained_model=resume_model)
+        missing_keys, unexpected_keys = self.model.set_state_dict(resume_model)
+        if len(unexpected_keys) > 0:
+            logger.error('Unexpected key(s) in state_dict: {}. '
+                         .format(', '.join('"{}"'.format(k) for k in unexpected_keys)))
+        if len(missing_keys) > 0:
+            logger.error('Missing key(s) in state_dict: {}. '
+                         .format(', '.join('"{}"'.format(k) for k in missing_keys)))
+        if len(unexpected_keys) > 0 or len(missing_keys) > 0:
+            raise ValueError("模型有误，请检查模型。")
         logger.info('成功恢复模型参数和优化方法参数：{}'.format(resume_model))
         self.model.eval()
         # 获取静态模型输入
