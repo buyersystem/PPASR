@@ -17,8 +17,7 @@ from ppasr.model_utils.conformer.subsampling import Conv2dSubsampling6
 from ppasr.model_utils.conformer.subsampling import Conv2dSubsampling8
 from ppasr.model_utils.conformer.subsampling import LinearNoSubsampling
 from ppasr.model_utils.utils.common import get_activation
-from ppasr.model_utils.utils.mask import add_optional_chunk_mask
-from ppasr.model_utils.utils.mask import make_non_pad_mask
+from ppasr.model_utils.utils.mask import add_optional_chunk_mask, make_pad_mask
 
 __all__ = ['ConformerEncoder']
 
@@ -185,12 +184,13 @@ class ConformerEncoder(nn.Layer):
         Returns:
             encoder output tensor, lens and mask
         """
-        masks = make_non_pad_mask(xs_lens).unsqueeze(1)  # (B, 1, L)
+        T = xs.shape[1]
+        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
 
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)
         xs, pos_emb, masks = self.embed(xs, masks, offset=0)
-        mask_pad = ~masks
+        mask_pad = masks
         chunk_masks = add_optional_chunk_mask(xs, masks,
                                               self.use_dynamic_chunk,
                                               self.use_dynamic_left_chunk,
@@ -245,8 +245,7 @@ class ConformerEncoder(nn.Layer):
         tmp_masks = paddle.ones([1, 1, xs.shape[1]], dtype=paddle.bool)
         # before embed, xs=(B, T, D1), pos_emb=(B=1, T, D)
         xs, pos_emb, _ = self.embed(xs, tmp_masks, offset=offset)
-
-        _, _, cache_t1, _ = att_cache.shape
+        elayers, cache_t1 = att_cache.shape[0], att_cache.shape[2]
         chunk_size = xs.shape[1]
         attention_key_size = cache_t1 + chunk_size
 

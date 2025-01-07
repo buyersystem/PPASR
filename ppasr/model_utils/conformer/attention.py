@@ -169,8 +169,7 @@ class MultiHeadedAttention(nn.Layer):
         #   non-trivial to calculate `next_cache_start` here.
         new_cache = paddle.concat((k, v), axis=-1)
 
-        # scores = paddle.matmul(q,
-        #    k.transpose([0, 1, 3, 2])) / math.sqrt(self.d_k)
+        # scores = paddle.matmul(q, k.transpose([0, 1, 3, 2])) / math.sqrt(self.d_k)
         scores = paddle.matmul(q, k, transpose_y=True) / math.sqrt(self.d_k)
         return self.forward_attention(v, scores, mask), new_cache
 

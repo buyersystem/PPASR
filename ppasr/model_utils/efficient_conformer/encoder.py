@@ -16,7 +16,7 @@ from ppasr.model_utils.efficient_conformer.convolution import ConvolutionModule
 from ppasr.model_utils.efficient_conformer.subsampling import Conv2dSubsampling2
 from ppasr.model_utils.utils.base import LayerNorm
 from ppasr.model_utils.utils.common import get_activation
-from ppasr.model_utils.utils.mask import make_non_pad_mask, add_optional_chunk_mask
+from ppasr.model_utils.utils.mask import add_optional_chunk_mask, make_pad_mask
 
 __all__ = ['EfficientConformerEncoder']
 
@@ -235,7 +235,8 @@ class EfficientConformerEncoder(nn.Layer):
             masks: paddle.Tensor batch padding mask after subsample
                 (B, 1, T' ~= T/subsample_rate)
         """
-        masks = make_non_pad_mask(xs_lens).unsqueeze(1)  # (B, 1, L)
+        T = xs.size[1]
+        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
 
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)

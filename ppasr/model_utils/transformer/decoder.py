@@ -6,10 +6,10 @@ from paddle import nn
 from typeguard import typechecked
 
 from ppasr.model_utils.conformer.attention import MultiHeadedAttention
-from ppasr.model_utils.utils.base import Embedding, LayerNorm, Linear
 from ppasr.model_utils.conformer.embedding import PositionalEncoding
 from ppasr.model_utils.conformer.positionwise import PositionwiseFeedForward
-from ppasr.model_utils.utils.mask import (subsequent_mask, make_non_pad_mask)
+from ppasr.model_utils.utils.base import Embedding, LayerNorm, Linear
+from ppasr.model_utils.utils.mask import (subsequent_mask, make_pad_mask)
 
 
 class BiTransformerDecoder(nn.Layer):
@@ -212,8 +212,9 @@ class TransformerDecoder(nn.Layer):
                 olens: (batch, )
         """
         tgt = ys_in_pad
+        maxlen = tgt.shape[1]
         # tgt_mask: (B, 1, L)
-        tgt_mask = (make_non_pad_mask(ys_in_lens).unsqueeze(1))
+        tgt_mask = ~make_pad_mask(ys_in_lens, maxlen).unsqueeze(1)
         # m: (1, L, L)
         m = subsequent_mask(tgt_mask.shape[-1]).unsqueeze(0)
         # tgt_mask: (B, L, L)

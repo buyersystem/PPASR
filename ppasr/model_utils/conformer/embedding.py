@@ -15,12 +15,12 @@ class NoPositionalEncoding(nn.Layer):
                  reverse: bool = False):
         nn.Layer.__init__(self)
 
-    def forward(self, x: paddle.Tensor,
-                offset: int = 0) -> Tuple[paddle.Tensor, paddle.Tensor]:
-        return x, None
+    def forward(self, x: paddle.Tensor, offset: int = 0) -> Tuple[paddle.Tensor, paddle.Tensor]:
+        pos_emb = paddle.zeros(1, x.size(1), self.d_model)
+        return self.dropout(x), pos_emb
 
     def position_encoding(self, offset: int, size: int) -> paddle.Tensor:
-        return None
+        return paddle.zeros(1, size, self.d_model)
 
 
 class PositionalEncoding(nn.Layer):

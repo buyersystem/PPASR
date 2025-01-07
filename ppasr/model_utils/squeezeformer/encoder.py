@@ -1,7 +1,7 @@
-import paddle
-import paddle.nn as nn
 from typing import Tuple, Union, Optional, List
 
+import paddle
+import paddle.nn as nn
 from typeguard import typechecked
 
 from ppasr.model_utils.conformer.attention import MultiHeadedAttention
@@ -14,7 +14,7 @@ from ppasr.model_utils.squeezeformer.time_reduction import TimeReductionLayer1D,
     TimeReductionLayer2D
 from ppasr.model_utils.utils.base import LayerNorm, Linear
 from ppasr.model_utils.utils.common import get_activation
-from ppasr.model_utils.utils.mask import make_non_pad_mask, add_optional_chunk_mask
+from ppasr.model_utils.utils.mask import add_optional_chunk_mask, make_pad_mask
 
 __all__ = ["SqueezeformerEncoder"]
 
@@ -191,7 +191,8 @@ class SqueezeformerEncoder(nn.Layer):
         Returns:
             encoder output tensor, lens and mask
         """
-        masks = make_non_pad_mask(xs_lens).unsqueeze(1)  # (B, 1, L)
+        T = xs.size[1]
+        masks = ~make_pad_mask(xs_lens, T).unsqueeze(1)  # (B, 1, T)
 
         if self.global_cmvn is not None:
             xs = self.global_cmvn(xs)
