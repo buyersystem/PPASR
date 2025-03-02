@@ -620,7 +620,7 @@ class PPASRTrainer(object):
         all_ctc_probs, all_ctc_lens, all_label = [], [], []
         error_results, losses = [], []
         with paddle.no_grad():
-            for batch_id, batch in enumerate(tqdm(self.test_loader())):
+            for batch_id, batch in enumerate(tqdm(self.test_loader(), desc='执行评估')):
                 if self.stop_eval: break
                 inputs, labels, input_lens, label_lens = batch
                 loss_dict = self.model(inputs, input_lens, labels, label_lens)
