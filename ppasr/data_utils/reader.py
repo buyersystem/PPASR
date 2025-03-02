@@ -6,7 +6,8 @@ import paddle
 from paddle.io import Dataset
 from yeaudio.audio import AudioSegment
 from yeaudio.augmentation import ReverbPerturbAugmentor, SpecAugmentor, SpecSubAugmentor
-from yeaudio.augmentation import SpeedPerturbAugmentor, VolumePerturbAugmentor, NoisePerturbAugmentor
+from yeaudio.augmentation import SpeedPerturbAugmentor, VolumePerturbAugmentor, NoisePerturbAugmentor, \
+    ShiftPerturbAugmentor, ResampleAugmentor
 
 from ppasr.data_utils.audio_featurizer import AudioFeaturizer
 from ppasr.data_utils.binary import DatasetReader
@@ -65,6 +66,8 @@ class PPASRDataset(Dataset):
         self.dataset_reader = None
         self.speed_augment = None
         self.volume_augment = None
+        self.shift_augment = None
+        self.resample_augment = None
         self.noise_augment = None
         self.reverb_augment = None
         self.spec_augment = None
@@ -174,6 +177,10 @@ class PPASRDataset(Dataset):
             self.speed_augment = SpeedPerturbAugmentor(**aug_conf.speed)
         if aug_conf.volume is not None:
             self.volume_augment = VolumePerturbAugmentor(**aug_conf.volume)
+        if aug_conf.shift is not None:
+            self.shift_augment = ShiftPerturbAugmentor(**aug_conf.shift)
+        if aug_conf.resample is not None:
+            self.resample_augment = ResampleAugmentor(**aug_conf.resample)
         if aug_conf.noise is not None:
             self.noise_augment = NoisePerturbAugmentor(**aug_conf.noise)
         if aug_conf.reverb is not None:
@@ -189,6 +196,10 @@ class PPASRDataset(Dataset):
             audio_segment = self.speed_augment(audio_segment)
         if self.volume_augment is not None:
             audio_segment = self.volume_augment(audio_segment)
+        if self.shift_augment is not None:
+            audio_segment = self.shift_augment(audio_segment)
+        if self.resample_augment is not None:
+            audio_segment = self.resample_augment(audio_segment)
         if self.noise_augment is not None:
             audio_segment = self.noise_augment(audio_segment)
         if self.reverb_augment is not None:
