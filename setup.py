@@ -1,7 +1,13 @@
+import shutil
+
 from setuptools import setup, find_packages
 import ppasr
 
 PPASR_VERSION = ppasr.__version__
+
+# 复制配置文件到项目目录下
+shutil.rmtree('./ppasr/configs/', ignore_errors=True)
+shutil.copytree('./configs/', './ppasr/configs/')
 
 
 def readme():
@@ -20,6 +26,7 @@ if __name__ == "__main__":
     setup(
         name='ppasr',
         packages=find_packages(exclude='download_data/'),
+        package_data={'': ['configs/*']},
         author='yeyupiaoling',
         version=PPASR_VERSION,
         install_requires=parse_requirements(),
@@ -44,3 +51,4 @@ if __name__ == "__main__":
         ],
         license='Apache License 2.0',
         ext_modules=[])
+    shutil.rmtree('./ppasr/configs/', ignore_errors=True)

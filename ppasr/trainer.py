@@ -2,6 +2,7 @@ import json
 import os
 import platform
 import shutil
+import sys
 import time
 from contextlib import nullcontext
 from datetime import timedelta
@@ -42,10 +43,11 @@ class PPASRTrainer(object):
                  decoder="ctc_greedy_search",
                  decoder_configs=None,
                  data_augment_configs=None,
-                 overwrites=None):
-        """ PPASR集成工具类
+                 overwrites=None,
+                 log_level="info"):
+        """ PPASR语音识别训练工具类
 
-        :param configs: 配置文件路径或者是yaml读取到的配置参数
+        :param configs: 配置文件路径，或者模型名称，如果是模型名称则会使用默认的配置文件
         :type configs: dict or str
         :param use_gpu: 是否使用GPU训练模型
         :type use_gpu: bool
@@ -59,6 +61,8 @@ class PPASRTrainer(object):
         :type data_augment_configs: dict or str
         :param overwrites: 覆盖配置文件中的参数，比如"train_conf.max_epoch=100"，多个用逗号隔开
         :type overwrites: str
+        :param log_level: 打印的日志等级，可选值有："debug", "info", "warning", "error"
+        :type log_level: str
         """
         if use_gpu:
             assert paddle.is_compiled_with_cuda(), 'GPU不可用'
@@ -66,8 +70,16 @@ class PPASRTrainer(object):
         else:
             os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
             paddle.device.set_device("cpu")
+        self.log_level = log_level.upper()
+        logger.remove()
+        logger.add(sink=sys.stdout, level=self.log_level)
         # 读取配置文件
         if isinstance(configs, str):
+            # 获取当前程序绝对路径
+            absolute_path = os.path.dirname(__file__)
+            # 获取默认配置文件路径
+            config_path = os.path.join(absolute_path, f"configs/{configs}.yml")
+            configs = config_path if os.path.exists(config_path) else configs
             with open(configs, 'r', encoding='utf-8') as f:
                 configs = yaml.load(f.read(), Loader=yaml.FullLoader)
         self.configs = dict_to_object(configs)
@@ -269,11 +281,12 @@ class PPASRTrainer(object):
                                  model_conf=self.configs.model_conf)
         # print(self.model)
         if is_train:
-            summary(self.model, inputs=[paddle.rand([1, 260, self.audio_featurizer.feature_dim]),
-                                        paddle.to_tensor([260], dtype=paddle.int64),
-                                        paddle.randint(low=0, high=self.tokenizer.vocab_size - 1, shape=[1, 10],
-                                                       dtype=paddle.int32),
-                                        paddle.to_tensor([10], dtype=paddle.int64)])
+            if self.log_level == "DEBUG" or self.log_level == "INFO":
+                summary(self.model, inputs=[paddle.rand([1, 260, self.audio_featurizer.feature_dim]),
+                                            paddle.to_tensor([260], dtype=paddle.int64),
+                                            paddle.randint(low=0, high=self.tokenizer.vocab_size - 1, shape=[1, 10],
+                                                           dtype=paddle.int32),
+                                            paddle.to_tensor([10], dtype=paddle.int64)])
             if self.configs.train_conf.enable_amp:
                 # 自动混合精度训练，逻辑2，定义GradScaler
                 self.amp_scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
@@ -472,15 +485,17 @@ class PPASRTrainer(object):
 
     def train(self,
               save_model_path='models/',
+              log_dir='log/',
+              max_epoch=None,
               resume_model=None,
-              pretrained_model=None,
-              augment_conf_path='configs/augmentation.json'):
+              pretrained_model=None):
         """
         训练模型
         :param save_model_path: 模型保存的路径
+        :param log_dir: 保存VisualDL日志文件的路径
+        :param max_epoch: 最大训练轮数，对应配置文件中的train_conf.max_epoch
         :param resume_model: 恢复训练，当为None则不使用预训练模型
         :param pretrained_model: 预训练模型的路径，当为None则不使用预训练模型
-        :param augment_conf_path: 数据增强的配置文件，为json格式
         """
         paddle.jit.enable_to_static(False)
         # 获取有多少张显卡训练
@@ -489,7 +504,7 @@ class PPASRTrainer(object):
         writer = None
         if self.local_rank == 0:
             # 日志记录器
-            writer = LogWriter(logdir='log')
+            writer = LogWriter(logdir=log_dir)
 
         if nranks > 1 and self.use_gpu:
             # 初始化Fleet环境
@@ -523,6 +538,8 @@ class PPASRTrainer(object):
         self.train_batch_sampler.epoch = last_epoch
         if self.local_rank == 0:
             writer.add_scalar('Train/lr', self.scheduler.get_lr(), last_epoch)
+        if max_epoch is not None:
+            self.configs.train_conf.max_epoch = max_epoch
         # 最大步数
         self.max_step = len(self.train_loader) * self.configs.train_conf.max_epoch
         self.train_step = max(last_epoch, 0) * len(self.train_loader)

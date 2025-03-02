@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from io import BufferedReader
 from typing import Union, List
 
@@ -30,9 +31,10 @@ class PPASRPredictor:
                  punc_online_model_dir: str = None,
                  punc_device_id: Union[str, int] = "-1",
                  use_gpu: bool = True,
-                 use_tensorrt: bool = False):
-        """
-        语音识别预测工具
+                 use_tensorrt: bool = False,
+                 log_level: str = "info"):
+        """PPASR语音识别识别工具类
+
         :param model_dir: 导出的预测模型文件夹路径
         :param decoder: 解码器，支持ctc_greedy、ctc_beam_search
         :param decoder_configs: 解码器配置参数文件路径，支持yaml格式
@@ -41,10 +43,14 @@ class PPASRPredictor:
         :param punc_device_id: 标点符号预测设备ID，-1表示使用CPU预测，否则使用指定GPU预测
         :param use_gpu: 是否使用GPU预测
         :param use_tensorrt: 是否使用TensorRT预测
+        :param log_level: 打印的日志等级，可选值有："debug", "info", "warning", "error"
         """
         self.model_dir = model_dir
         self.use_tensorrt = use_tensorrt
         model_info_path = os.path.join(model_dir, 'inference.json')
+        self.log_level = log_level.upper()
+        logger.remove()
+        logger.add(sink=sys.stdout, level=self.log_level)
         assert os.path.exists(model_info_path), f'模型配置文件[{model_info_path}]不存在，请检查该文件是否存在！'
         with open(model_info_path, 'r', encoding='utf-8') as f:
             configs = json.load(f)
