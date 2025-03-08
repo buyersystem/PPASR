@@ -6,7 +6,7 @@
 
 # PPASR流式与非流式语音识别项目（此分支尚未完成，请使用其他分支）
 
-PPASR是一款基于PaddlePaddle实现的自动语音识别框架，PPASR中文名称PaddlePaddle中文语音识别（PaddlePaddle Automatic Speech Recognition），当前为V3版本，如果想使用V2版本，请在这个分支[V2](https://github.com/yeyupiaoling/PPASR/tree/release/2.4.x)。PPASR致力于简单，实用的语音识别项目。可部署在服务器，Nvidia Jetson设备，未来还计划支持Android等移动设备。**别忘了star**
+PPASR是一款基于PaddlePaddle实现的自动语音识别框架，PPASR中文名称PaddlePaddle中文语音识别（PaddlePaddle Automatic Speech Recognition），当前为V3版本，与V2版本不兼容，如果想使用V2版本，请在这个分支[V2](https://github.com/yeyupiaoling/PPASR/tree/release/2.4.x)。PPASR致力于简单，实用的语音识别项目。可部署在服务器，Nvidia Jetson设备，未来还计划支持Android等移动设备。**别忘了star**
 
 **欢迎大家扫码入知识星球或者QQ群讨论，知识星球里面提供项目的模型文件和博主其他相关项目的模型文件，也包括其他一些资源。**
 
