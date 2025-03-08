@@ -4,7 +4,7 @@ import shutil
 
 import paddle
 from loguru import logger
-from paddle import __version__
+from ppasr import __version__
 
 
 def load_pretrained(model, pretrained_model):
