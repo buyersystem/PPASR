@@ -3,6 +3,7 @@ from typing import List, Dict
 
 import numpy as np
 import paddle
+from loguru import logger
 from paddle.io import Dataset
 from yeaudio.audio import AudioSegment
 from yeaudio.augmentation import ReverbPerturbAugmentor, SpecAugmentor, SpecSubAugmentor
@@ -80,47 +81,51 @@ class PPASRDataset(Dataset):
 
     def __getitem__(self, idx):
         data_list = self.get_one_list(idx)
-        # 分割音频路径和标签
-        audio_file, transcript = data_list["audio_filepath"], data_list["text"]
-        # 如果后缀名为.npy的文件，那么直接读取
-        if audio_file.endswith('.npy'):
-            start_frame, end_frame = data_list["start_frame"], data_list["end_frame"]
-            feature = np.load(audio_file)
-            feature = feature[start_frame:end_frame, :]
-        else:
-            if 'start_time' not in data_list.keys():
-                # 读取音频
-                audio_segment = AudioSegment.from_file(audio_file)
+        try:
+            # 分割音频路径和标签
+            audio_file, transcript = data_list["audio_filepath"], data_list["text"]
+            # 如果后缀名为.npy的文件，那么直接读取
+            if audio_file.endswith('.npy'):
+                start_frame, end_frame = data_list["start_frame"], data_list["end_frame"]
+                feature = np.load(audio_file)
+                feature = feature[start_frame:end_frame, :]
             else:
-                start_time, end_time = data_list["start_time"], data_list["end_time"]
-                # 分割读取音频
-                audio_segment = AudioSegment.slice_from_file(audio_file, start=start_time, end=end_time)
-            # 音频增强
+                if 'start_time' not in data_list.keys():
+                    # 读取音频
+                    audio_segment = AudioSegment.from_file(audio_file)
+                else:
+                    start_time, end_time = data_list["start_time"], data_list["end_time"]
+                    # 分割读取音频
+                    audio_segment = AudioSegment.slice_from_file(audio_file, start=start_time, end=end_time)
+                # 音频增强
+                if self.mode == 'train':
+                    audio_segment = self.augment_audio(audio_segment)
+                # 重采样
+                if audio_segment.sample_rate != self._target_sample_rate:
+                    audio_segment.resample(self._target_sample_rate)
+                # 音量归一化
+                if self._use_dB_normalization:
+                    audio_segment.normalize(target_db=self._target_dB)
+                # 预处理，提取特征
+                feature = self._audio_featurizer.featurize(waveform=audio_segment.samples,
+                                                           sample_rate=audio_segment.sample_rate)
+            # 特征增强
             if self.mode == 'train':
-                audio_segment = self.augment_audio(audio_segment)
-            # 重采样
-            if audio_segment.sample_rate != self._target_sample_rate:
-                audio_segment.resample(self._target_sample_rate)
-            # 音量归一化
-            if self._use_dB_normalization:
-                audio_segment.normalize(target_db=self._target_dB)
-            # 预处理，提取特征
-            feature = self._audio_featurizer.featurize(waveform=audio_segment.samples,
-                                                       sample_rate=audio_segment.sample_rate)
-        # 特征增强
-        if self.mode == 'train':
-            if self.spec_augment is not None:
-                feature = self.spec_augment(feature)
-            if self.spec_sub_augment is not None:
-                feature = self.spec_sub_augment(feature)
-        feature = paddle.to_tensor(feature, dtype=paddle.float32)
-        # 有些任务值需要音频特征
-        if self._tokenizer is None:
-            return feature
-        # 把文本标签转成token
-        text_ids = self._tokenizer.text2ids(transcript)
-        text_ids = paddle.to_tensor(text_ids, dtype=paddle.int32)
-        return feature, text_ids
+                if self.spec_augment is not None:
+                    feature = self.spec_augment(feature)
+                if self.spec_sub_augment is not None:
+                    feature = self.spec_sub_augment(feature)
+            feature = paddle.to_tensor(feature, dtype=paddle.float32)
+            # 有些任务值需要音频特征
+            if self._tokenizer is None:
+                return feature
+            # 把文本标签转成token
+            text_ids = self._tokenizer.text2ids(transcript)
+            text_ids = paddle.to_tensor(text_ids, dtype=paddle.int32)
+            return feature, text_ids
+        except Exception as e:
+            logger.exception(f"{data_list} 读取失败，错误信息：{e}")
+            return self.__getitem__(np.random.randint(0, len(self)))
 
     def __len__(self):
         return len(self.data_list)
