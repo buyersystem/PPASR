@@ -282,11 +282,14 @@ class PPASRTrainer(object):
         # print(self.model)
         if is_train:
             if self.log_level == "DEBUG" or self.log_level == "INFO":
-                summary(self.model, inputs=[paddle.rand([1, 260, self.audio_featurizer.feature_dim]),
-                                            paddle.to_tensor([260], dtype=paddle.int64),
-                                            paddle.randint(low=0, high=self.tokenizer.vocab_size - 1, shape=[1, 10],
-                                                           dtype=paddle.int32),
-                                            paddle.to_tensor([10], dtype=paddle.int64)])
+                try:
+                    summary(self.model, inputs=[paddle.rand([1, 260, self.audio_featurizer.feature_dim]),
+                                                paddle.to_tensor([260], dtype=paddle.int64),
+                                                paddle.randint(low=0, high=self.tokenizer.vocab_size - 1, shape=[1, 10],
+                                                               dtype=paddle.int32),
+                                                paddle.to_tensor([10], dtype=paddle.int64)])
+                except Exception as e:
+                    logger.error("模型结构打印失败！")
             if self.configs.train_conf.enable_amp:
                 # 自动混合精度训练，逻辑2，定义GradScaler
                 self.amp_scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
