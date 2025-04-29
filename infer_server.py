@@ -24,7 +24,7 @@ add_arg("host",             str,    '0.0.0.0',            "监听主机的IP地�
 add_arg("port",             int,    5000,                 "服务所使用的端口号")
 add_arg("save_path",        str,    'dataset/upload/',    "上传音频文件的保存目录")
 add_arg('use_gpu',          bool,   True,   "是否使用GPU预测")
-add_arg('use_pun',          bool,   False,  "是否给识别结果加标点符号")
+add_arg('use_punc',         bool,   False,  "是否给识别结果加标点符号")
 add_arg('is_itn',           bool,   False,  "是否对文本进行反标准化")
 add_arg('model_dir',        str,    'models/ConformerModel_fbank/inference_model/', "导出的预测模型文件夹路径")
 add_arg('decoder',          str,   'ctc_greedy_search',     "解码器，支持 ctc_greedy_search、ctc_prefix_beam_search、attention_rescoring、ctc_beam_search")
@@ -42,8 +42,7 @@ predictor = PPASRPredictor(model_dir=args.model_dir,
                            use_gpu=args.use_gpu,
                            decoder=args.decoder,
                            decoder_configs=args.decoder_configs,
-                           use_pun=args.use_pun,
-                           pun_model_dir=args.pun_model_dir)
+                           punc_model_dir=args.punc_model_dir)
 
 
 # 语音识别接口
@@ -59,7 +58,7 @@ async def recognition(audio: UploadFile = File(..., description="音频文件"))
         await out_file.write(content)
     try:
         start = time.time()
-        result = predictor.predict(audio_data=file_path, use_pun=args.use_pun, is_itn=args.is_itn)
+        result = predictor.predict(audio_data=file_path, use_punc=args.use_punc, is_itn=args.is_itn)
         end = time.time()
         logger.info(f"识别时间：{round((end - start) * 1000)}ms，识别结果：{result}")
         result = {"code": 0, "msg": "success", "result": result}
@@ -92,8 +91,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     is_end = True
                     data = data[:-3]
                 # 开始预测
-                result = predictor.predict_stream(audio_data=data, use_pun=args.use_pun, is_itn=args.is_itn,
-                                                  is_end=is_end)
+                result = predictor.predict_stream(audio_data=data, use_punc=args.use_punc, is_itn=args.is_itn,
+                                                  is_final=is_end)
                 if result is not None:
                     score, text = result['score'], result['text']
                 send_data = {"code": 0, "result": text}
@@ -111,7 +110,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 except:
                     break
         # 重置流式识别
-        predictor.reset_stream()
+        predictor.reset_predictor()
         predictor.running = False
         # 保存录音
         save_dir = os.path.join(args.save_path, datetime.now().strftime('%Y-%m-%d'))
