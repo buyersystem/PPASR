@@ -91,8 +91,7 @@ class SpeechRecognitionApp:
                                             use_gpu=args.use_gpu,
                                             decoder=args.decoder,
                                             decoder_configs=args.decoder_configs,
-                                            use_pun=args.use_pun,
-                                            pun_model_dir=args.pun_model_dir)
+                                            punc_model_dir=args.pun_model_dir)
 
     # 是否对文本进行反标准化
     def is_itn_state(self):
