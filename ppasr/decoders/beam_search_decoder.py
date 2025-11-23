@@ -5,7 +5,7 @@ import numpy as np
 import kenlm
 from loguru import logger
 
-from masr.utils.utils import download
+from ppasr.utils.utils import download
 
 # 常量定义
 NUM_FLT_INF = float('-inf')
