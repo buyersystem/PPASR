@@ -245,7 +245,7 @@ class ConformerModel(paddle.nn.Layer):
         seq_len_expand = r_hyps_lens.unsqueeze(1)
         seq_mask = seq_len_expand > index_range  # (beam, max_len)
         index = (seq_len_expand - 1) - index_range  # (beam, max_len)
-        index = index * seq_mask
+        index = index.astype(paddle.int64) * seq_mask.astype(paddle.int64)
         r_hyps = paddle.assign(paddle.take_along_axis(r_hyps, axis=1, indices=index))
         r_hyps = paddle.where(seq_mask, r_hyps, paddle.to_tensor(self.eos_symbol(), dtype=paddle.int64))
         r_hyps = paddle.concat([hyps[:, 0:1], r_hyps], axis=1)
